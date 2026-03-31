@@ -85,9 +85,9 @@ def create_gauge(value, title, color, max_v=100.0, h=250):
         mode="gauge+number", value=float(value),
         number={'suffix': "%", 'font': {'size': 26, 'color': color, 'family': "Arial Black"}},
         title={'text': title, 'font': {'size': 16, 'color': '#333', 'weight': 'bold'}},
-        gauge={'axis': {'range': [0, max_v], 'tickwidth': 1, 'tickcolor': "darkblue"},
+        gauge={'axis': {'range': list((0, max_v)), 'tickwidth': 1, 'tickcolor': "darkblue"},
                'bar': {'color': color},
-               'steps': [{'range':, 'color': '#E8F5E9'}, {'range':, 'color': '#FEF9E7'}, {'range':, 'color': '#FDEDEC'}],
+               'steps': [{'range': list((0, 40)), 'color': '#E8F5E9'}, {'range': list((40, 75)), 'color': '#FEF9E7'}, {'range': list((75, 100)), 'color': '#FDEDEC'}],
                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': float(value)}}))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
@@ -121,7 +121,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<br><br><h1 style='text-align: center; color: #0b2e59;'>⚡ PowerGuard AI Enterprise Portal</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #666;'>Select Diagnostic Module</h3><br><br>", unsafe_allow_html=True)
     
-    col1, col2, col3, col4 = st.columns()
+    col1, col2, col3, col4 = st.columns(list((1, 2, 2, 1)))
     with col2:
         st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff;'><h3>⚡ Transformer & Reactor</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
         if st.button("Launch Transformer Guard", use_container_width=True):
@@ -143,7 +143,7 @@ elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br><br><h2 style='text-align: center; color: #4da6ff;'>⚡ TransformerGuard Login</h2>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
             with st.form("tx_login_form"):
                 user = st.text_input("Username")
@@ -154,7 +154,7 @@ elif st.session_state['current_page'] == 'transformer':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns(list((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -170,7 +170,7 @@ elif st.session_state['current_page'] == 'transformer':
             tab1, tab2 = st.tabs(["🧪 DGA & Oil Quality", "🌡️ THERMAL LOAD ANALYSIS"])
 
             with tab1:
-                col_in, col_out = st.columns([1, 2.2])
+                col_in, col_out = st.columns(list((1, 2.2)))
                 with col_in:
                     with st.form("dga_form"):
                         h2 = st.number_input("H2", value=5.0)
@@ -190,14 +190,14 @@ elif st.session_state['current_page'] == 'transformer':
                         
                         fig_g = go.Figure(go.Indicator(
                             mode="gauge+number", value=h_score,
-                            gauge={'axis': {'range':, 'tickwidth': 2, 'tickcolor': "black"},
+                            gauge={'axis': {'range': list((0, 60)), 'tickwidth': 2, 'tickcolor': "black"},
                                    'bar': {'color': "black"},
-                                   'steps': [{'range':, 'color': "#00cc66"}, {'range':, 'color': "#ffcc00"}, {'range':, 'color': "#ff3333"}]}))
+                                   'steps': [{'range': list((0, 30)), 'color': "#00cc66"}, {'range': list((30, 45)), 'color': "#ffcc00"}, {'range': list((45, 60)), 'color': "#ff3333"}]}))
                         fig_g.update_layout(height=280, margin=dict(t=30, b=10))
                         st.plotly_chart(fig_g, use_container_width=True)
 
             with tab2:
-                col_t_in, col_t_out = st.columns([1, 1.5])
+                col_t_in, col_t_out = st.columns(list((1, 1.5)))
                 with col_t_in:
                     with st.form("thermal_form"):
                         hufl = st.number_input("HUFL", value=12.5)
@@ -209,8 +209,8 @@ elif st.session_state['current_page'] == 'transformer':
                         st.metric("Predicted Top Oil Temp", f"{pred_ot:.1f} °C")
                         fig_t = go.Figure(go.Indicator(
                             mode="gauge+number", value=pred_ot,
-                            gauge={'axis': {'range':}, 'bar': {'color': "black"},
-                                   'steps': [{'range':, 'color': "#00cc66"}, {'range':, 'color': "#ffcc00"}, {'range':, 'color': "#ff3333"}]}))
+                            gauge={'axis': {'range': list((20, 120))}, 'bar': {'color': "black"},
+                                   'steps': [{'range': list((20, 60)), 'color': "#00cc66"}, {'range': list((60, 80)), 'color': "#ffcc00"}, {'range': list((80, 120)), 'color': "#ff3333"}]}))
                         fig_t.update_layout(height=280)
                         st.plotly_chart(fig_t, use_container_width=True)
 
@@ -221,7 +221,7 @@ elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br><br><h2 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h2>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
             with st.form("motor_login_form"):
                 user = st.text_input("Username")
@@ -232,7 +232,7 @@ elif st.session_state['current_page'] == 'motor':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns(list((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -248,7 +248,7 @@ elif st.session_state['current_page'] == 'motor':
             tab1, tab2, tab3 = st.tabs(["⚙️ Motor Diagnostics", "📳 Bearing Vibration", "📊 Fusion & Report"])
 
             with tab1:
-                c_in, c_out = st.columns([1, 2.5])
+                c_in, c_out = st.columns(list((1, 2.5)))
                 with c_in:
                     motor_type = st.selectbox("Motor Quality", ['L', 'M', 'H'], index=1)
                     air_temp = st.number_input("Ambient Air [K]", value=298.0)
@@ -265,7 +265,6 @@ elif st.session_state['current_page'] == 'motor':
                     processed_df = raw_df.copy()
                     processed_df[cols_to_scale] = scaler1.transform(raw_df[cols_to_scale])
                     
-                    # قراءة احتمالات النموذج وتحديد الخطورة
                     probs = np.array(model1.predict_proba(processed_df)).flatten().tolist()
                     p_normal = probs * 100 if len(probs) > 0 else 0.0
                     overall_risk_pct = 100.0 - p_normal
