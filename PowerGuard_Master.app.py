@@ -170,7 +170,7 @@ elif st.session_state['current_page'] == 'transformer':
             tab1, tab2 = st.tabs(["🧪 DGA & Oil Quality", "🌡️ THERMAL LOAD ANALYSIS"])
 
             with tab1:
-                col_in, col_out = st.columns()
+                col_in, col_out = st.columns([1, 2.2])
                 with col_in:
                     with st.form("dga_form"):
                         h2 = st.number_input("H2", value=5.0)
@@ -197,7 +197,7 @@ elif st.session_state['current_page'] == 'transformer':
                         st.plotly_chart(fig_g, use_container_width=True)
 
             with tab2:
-                col_t_in, col_t_out = st.columns()
+                col_t_in, col_t_out = st.columns([1, 1.5])
                 with col_t_in:
                     with st.form("thermal_form"):
                         hufl = st.number_input("HUFL", value=12.5)
@@ -264,8 +264,10 @@ elif st.session_state['current_page'] == 'motor':
                     
                     processed_df = raw_df.copy()
                     processed_df[cols_to_scale] = scaler1.transform(raw_df[cols_to_scale])
-                    probs = model1.predict_proba(processed_df)
-                    p_normal = probs * 100
+                    
+                    # قراءة احتمالات النموذج وتحديد الخطورة
+                    probs = np.array(model1.predict_proba(processed_df)).flatten().tolist()
+                    p_normal = probs * 100 if len(probs) > 0 else 0.0
                     overall_risk_pct = 100.0 - p_normal
                     
                     st.session_state.motor_risk = overall_risk_pct
