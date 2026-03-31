@@ -192,168 +192,162 @@ elif st.session_state['current_page'] == 'transformer':
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs(list(("🧪 DGA & Quality", "🌡️ THERMAL LOAD", "📁 Batch", "📑 RISK Logs", "📄 AI Report")))
 
-        # --- TAB 1 ---
+        # --- TAB 1 (Real-Time Auto Update) ---
         with tab1:
             col_in, col_out = st.columns(list((1, 2.2)))
             with col_in:
                 st.markdown("### 📊 DGA Parameters")
-                with st.form("tx_input_form"):
-                    h2 = st.number_input("Hydrogen (H2)", value=5.0)
-                    o2 = st.number_input("Oxygen (O2)", value=500.0)
-                    n2 = st.number_input("Nitrogen (N2)", value=10000.0)
-                    ch4 = st.number_input("Methane (CH4)", value=2.0)
-                    co = st.number_input("Carbon Monoxide (CO)", value=100.0)
-                    co2 = st.number_input("Carbon Dioxide (CO2)", value=300.0)
-                    c2h4 = st.number_input("Ethylene (C2H4)", value=1.0)
-                    c2h6 = st.number_input("Ethane (C2H6)", value=5.0)
-                    c2h2 = st.number_input("Acetylene (C2H2)", value=0.0)
-                    dbds = st.number_input("DBDS (ppm)", value=0.1)
-                    pf = st.number_input("Power Factor (%)", value=0.05)
-                    ift = st.number_input("Interfacial Tension", min_value=0.0, max_value=75.0, value=45.0)
-                    dr = st.number_input("Dielectric Rigidity (kV)", value=70.0)
-                    wc = st.number_input("Water Content (ppm)", value=2.0)
-                    sub_tx = st.form_submit_button("🔍 Analyze Oil Health", use_container_width=True)
+                h2 = st.number_input("Hydrogen (H2)", value=5.0)
+                o2 = st.number_input("Oxygen (O2)", value=500.0)
+                n2 = st.number_input("Nitrogen (N2)", value=10000.0)
+                ch4 = st.number_input("Methane (CH4)", value=2.0)
+                co = st.number_input("Carbon Monoxide (CO)", value=100.0)
+                co2 = st.number_input("Carbon Dioxide (CO2)", value=300.0)
+                c2h4 = st.number_input("Ethylene (C2H4)", value=1.0)
+                c2h6 = st.number_input("Ethane (C2H6)", value=5.0)
+                c2h2 = st.number_input("Acetylene (C2H2)", value=0.0)
+                dbds = st.number_input("DBDS (ppm)", value=0.1)
+                pf = st.number_input("Power Factor (%)", value=0.05)
+                ift = st.number_input("Interfacial Tension", min_value=0.0, max_value=75.0, value=45.0)
+                dr = st.number_input("Dielectric Rigidity (kV)", value=70.0)
+                wc = st.number_input("Water Content (ppm)", value=2.0)
 
             with col_out:
-                if sub_tx:
-                    input_df = pd.DataFrame(list(((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc),)), 
-                                            columns=list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')))
+                input_df = pd.DataFrame(list(((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc),)), 
+                                        columns=list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')))
+                
+                h_score = float(model_health.predict(input_df).item())
+                l_yrs = float(model_life.predict(input_df).item())
+                diagnosis = get_duval_diagnosis(ch4, c2h4, c2h2)
+
+                cf = 0.0
+                if dr < 35: cf += 1.0        
+                if ift < 20: cf += 1.0       
+                if wc > 25: cf += 1.5        
+                if co > 500: cf += 1.5       
+                if pf > 1.5: cf += 1.0       
+                if c2h2 > 10: cf += 2.0      
+                
+                if cf > 0:
+                    h_score = min(60.0, h_score + (cf * 8.0))
+                    l_yrs = max(0.2, l_yrs / (cf * 2.5)) 
+
+                if h_score <= 30: status, color = "SAFE", "#00cc66"
+                elif h_score <= 45: status, color = "WARNING", "#ffcc00"
+                else: status, color = "RISKY", "#ff3333"
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Degradation Index", f"{h_score:.2f}")
+                m2.metric("Status", status)
+                m3.metric("Life Expectancy", f"{l_yrs:.1f} Yrs")
+                m4.metric("AI Confidence", f"{get_tx_confidence(model_health, input_df):.1f} %")
+
+                col_g, col_d = st.columns(list((1, 1.2)))
+                with col_g:
+                    fig_g = go.Figure(go.Indicator(
+                        mode="gauge+number", value=h_score,
+                        gauge={'axis': {'range': list((0, 60)), 'tickwidth': 2, 'tickcolor': "black"},
+                               'bar': {'color': "black"},
+                               'steps': list((
+                                   {'range': list((0, 30)), 'color': "#00cc66"},
+                                   {'range': list((30, 45)), 'color': "#ffcc00"},
+                                   {'range': list((45, 60)), 'color': "#ff3333"}
+                               ))}))
+                    fig_g.update_layout(height=280, margin=dict(t=30, b=10))
+                    st.plotly_chart(fig_g, use_container_width=True)
+                    st.markdown(f"<h2 style='text-align: center; color: {color}; margin-top:-30px;'>{status}</h2>", unsafe_allow_html=True)
+
+                with col_d:
+                    tot_gas = ch4 + c2h4 + c2h2
+                    if tot_gas > 0: p_ch4, p_c2h4, p_c2h2 = (ch4/tot_gas)*100, (c2h4/tot_gas)*100, (c2h2/tot_gas)*100
+                    else: p_ch4, p_c2h4, p_c2h2 = 33.33, 33.33, 33.33 
                     
-                    h_score = float(model_health.predict(input_df).item())
-                    l_yrs = float(model_life.predict(input_df).item())
-                    diagnosis = get_duval_diagnosis(ch4, c2h4, c2h2)
+                    fig_tri = go.Figure()
+                    fig_tri.add_trace(go.Scatterternary(a=list((100, 0, 0)), b=list((0, 100, 0)), c=list((0, 0, 100)), mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
+                    fig_tri.add_trace(go.Scatterternary(a=list((p_ch4,)), b=list((p_c2h4,)), c=list((p_c2h2,)), mode='markers', marker=dict(size=14, color='red', symbol='cross')))
+                    fig_tri.update_layout(title="Duval Triangle", height=320, margin=dict(b=0), ternary=dict(sum=100, aaxis=dict(title="CH4 %", min=0), baxis=dict(title="C2H4 %", min=0), caxis=dict(title="C2H2 %", min=0)), showlegend=False)
+                    st.plotly_chart(fig_tri, use_container_width=True)
+                    st.info(f"**Diagnosis:** {diagnosis}")
+                
+                st.markdown("---")
+                st.markdown("### 📊 Variables Impact")
+                features_list = list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
+                importances = model_health.feature_importances_
+                baselines_dga = np.array(list((5.0, 500.0, 10000.0, 2.0, 100.0, 300.0, 1.0, 5.0, 0.1, 0.1, 0.05, 45.0, 70.0, 2.0)))
+                input_vals = input_df.values.flatten()
+                deviations = np.abs(input_vals - baselines_dga) / baselines_dga
+                dynamic_impacts = importances * deviations
+                if dynamic_impacts.sum() > 0: dynamic_impacts = (dynamic_impacts / dynamic_impacts.sum()) * 100
+                else: dynamic_impacts = importances * 100
+                df_imp = pd.DataFrame({'Feature': features_list, 'Impact (%)': dynamic_impacts}).sort_values(by='Impact (%)')
+                fig_imp = px.bar(df_imp, x='Impact (%)', y='Feature', orientation='h', color='Impact (%)', color_continuous_scale='Blues')
+                fig_imp.update_layout(height=350, coloraxis_showscale=False)
+                st.plotly_chart(fig_imp, use_container_width=True)
 
-                    cf = 0.0
-                    if dr < 35: cf += 1.0        
-                    if ift < 20: cf += 1.0       
-                    if wc > 25: cf += 1.5        
-                    if co > 500: cf += 1.5       
-                    if pf > 1.5: cf += 1.0       
-                    if c2h2 > 10: cf += 2.0      
-                    
-                    if cf > 0:
-                        h_score = min(60.0, h_score + (cf * 8.0))
-                        l_yrs = max(0.2, l_yrs / (cf * 2.5)) 
-
-                    if h_score <= 30: status, color = "SAFE", "#00cc66"
-                    elif h_score <= 45: status, color = "WARNING", "#ffcc00"
-                    else: status, color = "RISKY", "#ff3333"
-
-                    m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Degradation Index", f"{h_score:.2f}")
-                    m2.metric("Status", status)
-                    m3.metric("Life Expectancy", f"{l_yrs:.1f} Yrs")
-                    m4.metric("AI Confidence", f"{get_tx_confidence(model_health, input_df):.1f} %")
-
-                    col_g, col_d = st.columns(list((1, 1.2)))
-                    with col_g:
-                        fig_g = go.Figure(go.Indicator(
-                            mode="gauge+number", value=h_score,
-                            gauge={'axis': {'range': list((0, 60)), 'tickwidth': 2, 'tickcolor': "black"},
-                                   'bar': {'color': "black"},
-                                   'steps': list((
-                                       {'range': list((0, 30)), 'color': "#00cc66"},
-                                       {'range': list((30, 45)), 'color': "#ffcc00"},
-                                       {'range': list((45, 60)), 'color': "#ff3333"}
-                                   ))}))
-                        fig_g.update_layout(height=280, margin=dict(t=30, b=10))
-                        st.plotly_chart(fig_g, use_container_width=True)
-                        st.markdown(f"<h2 style='text-align: center; color: {color}; margin-top:-30px;'>{status}</h2>", unsafe_allow_html=True)
-
-                    with col_d:
-                        tot_gas = ch4 + c2h4 + c2h2
-                        if tot_gas > 0: p_ch4, p_c2h4, p_c2h2 = (ch4/tot_gas)*100, (c2h4/tot_gas)*100, (c2h2/tot_gas)*100
-                        else: p_ch4, p_c2h4, p_c2h2 = 33.33, 33.33, 33.33 
-                        
-                        fig_tri = go.Figure()
-                        fig_tri.add_trace(go.Scatterternary(a=list((100, 0, 0)), b=list((0, 100, 0)), c=list((0, 0, 100)), mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
-                        fig_tri.add_trace(go.Scatterternary(a=list((p_ch4,)), b=list((p_c2h4,)), c=list((p_c2h2,)), mode='markers', marker=dict(size=14, color='red', symbol='cross')))
-                        fig_tri.update_layout(title="Duval Triangle", height=320, margin=dict(b=0), ternary=dict(sum=100, aaxis=dict(title="CH4 %", min=0), baxis=dict(title="C2H4 %", min=0), caxis=dict(title="C2H2 %", min=0)), showlegend=False)
-                        st.plotly_chart(fig_tri, use_container_width=True)
-                        st.info(f"**Diagnosis:** {diagnosis}")
-                    
-                    st.markdown("---")
-                    st.markdown("### 📊 Variables Impact")
-                    features_list = list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
-                    importances = model_health.feature_importances_
-                    baselines_dga = np.array(list((5.0, 500.0, 10000.0, 2.0, 100.0, 300.0, 1.0, 5.0, 0.1, 0.1, 0.05, 45.0, 70.0, 2.0)))
-                    input_vals = input_df.values.flatten()
-                    deviations = np.abs(input_vals - baselines_dga) / baselines_dga
-                    dynamic_impacts = importances * deviations
-                    if dynamic_impacts.sum() > 0: dynamic_impacts = (dynamic_impacts / dynamic_impacts.sum()) * 100
-                    else: dynamic_impacts = importances * 100
-                    df_imp = pd.DataFrame({'Feature': features_list, 'Impact (%)': dynamic_impacts}).sort_values(by='Impact (%)')
-                    fig_imp = px.bar(df_imp, x='Impact (%)', y='Feature', orientation='h', color='Impact (%)', color_continuous_scale='Blues')
-                    fig_imp.update_layout(height=350, coloraxis_showscale=False)
-                    st.plotly_chart(fig_imp, use_container_width=True)
-
-        # --- TAB 2 ---
+        # --- TAB 2 (Real-Time Auto Update) ---
         with tab2:
             st.markdown("### 🌡️ Thermal Load Predictive Analysis")
             col_t_in, col_t_out = st.columns(list((1, 1.5)))
             with col_t_in:
-                with st.form("tx_thermal_form"):
-                    capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0)
-                    c1, c2 = st.columns(2)
-                    hour = c1.number_input("Hour (0-23)", min_value=0, max_value=23, value=14)
-                    month = c2.number_input("Month (1-12)", min_value=1, max_value=12, value=7)
-                    hufl = st.number_input("HUFL", value=12.5)
-                    hull = st.number_input("HULL", value=3.2)
-                    mufl = st.number_input("MUFL", value=8.1)
-                    mull = st.number_input("MULL", value=1.5)
-                    lufl = st.number_input("LUFL", value=4.5)
-                    lull = st.number_input("LULL", value=0.8)
-                    sub_thm = st.form_submit_button("🌡️ Predict Temp", use_container_width=True)
+                capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0)
+                c1, c2 = st.columns(2)
+                hour = c1.number_input("Hour (0-23)", min_value=0, max_value=23, value=14)
+                month = c2.number_input("Month (1-12)", min_value=1, max_value=12, value=7)
+                hufl = st.number_input("HUFL", value=12.5)
+                hull = st.number_input("HULL", value=3.2)
+                mufl = st.number_input("MUFL", value=8.1)
+                mull = st.number_input("MULL", value=1.5)
+                lufl = st.number_input("LUFL", value=4.5)
+                lull = st.number_input("LULL", value=0.8)
                     
             with col_t_out:
-                if sub_thm:
-                    total_active_load = hufl + mufl + lufl
-                    load_factor_percent = (total_active_load / capacity_kva) * 100.0
-                    norm_ratio = 50.0 / capacity_kva
-                    t_input_norm = pd.DataFrame(list(((hufl*norm_ratio, hull*norm_ratio, mufl*norm_ratio, mull*norm_ratio, lufl*norm_ratio, lull*norm_ratio, hour, month),)), 
-                                           columns=list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')))
-                    
-                    pred_ot = float(model_thermal.predict(t_input_norm).item())
-                    load_penalty = (load_factor_percent - 80.0) * 1.2 if load_factor_percent > 80.0 else 0.0
-                    ambient_penalty = 12.0 if month in list((5, 6, 7, 8, 9)) and 11 <= hour <= 16 else 0.0
-                    
-                    if load_penalty > 0 or ambient_penalty > 0: pred_ot = pred_ot + load_penalty + ambient_penalty
-                    pred_ot = max(20.0, min(120.0, pred_ot))
-                    
-                    if pred_ot < 60: t_status, t_color, msg = "NORMAL", "#00cc66", "Temperature is within safe limits."
-                    elif pred_ot < 80: t_status, t_color, msg = "WARNING", "#ffcc00", "High load detected. Ensure cooling."
-                    else: t_status, t_color, msg = "RISKY", "#ff3333", "CRITICAL OVERHEATING! Reduce load."
-                    
-                    tm1, tm2, tm3 = st.columns(3)
-                    tm1.metric("Predicted Top Oil Temp", f"{pred_ot:.1f} °C")
-                    tm2.metric("Thermal Status", t_status)
-                    tm3.metric("AI Confidence", f"{get_tx_confidence(model_thermal, t_input_norm):.1f} %")
-                    
-                    fig_t = go.Figure(go.Indicator(
-                        mode = "gauge+number", value = pred_ot,
-                        gauge = {'axis': {'range': list((20, 120))}, 'bar': {'color': "black"},
-                                 'steps': list((
-                                     {'range': list((20, 60)), 'color': "rgba(0, 204, 102, 0.4)"},
-                                     {'range': list((60, 80)), 'color': "rgba(255, 204, 0, 0.4)"},
-                                     {'range': list((80, 120)), 'color': "rgba(255, 51, 51, 0.4)"}
-                                 ))}))
-                    fig_t.update_layout(height=350, margin=dict(t=30, b=10))
-                    st.plotly_chart(fig_t, use_container_width=True)
-                    st.info(f"💡 **Recommendation:** {msg}")
+                total_active_load = hufl + mufl + lufl
+                load_factor_percent = (total_active_load / capacity_kva) * 100.0
+                norm_ratio = 50.0 / capacity_kva
+                t_input_norm = pd.DataFrame(list(((hufl*norm_ratio, hull*norm_ratio, mufl*norm_ratio, mull*norm_ratio, lufl*norm_ratio, lull*norm_ratio, hour, month),)), 
+                                        columns=list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')))
+                
+                pred_ot = float(model_thermal.predict(t_input_norm).item())
+                load_penalty = (load_factor_percent - 80.0) * 1.2 if load_factor_percent > 80.0 else 0.0
+                ambient_penalty = 12.0 if month in list((5, 6, 7, 8, 9)) and 11 <= hour <= 16 else 0.0
+                
+                if load_penalty > 0 or ambient_penalty > 0: pred_ot = pred_ot + load_penalty + ambient_penalty
+                pred_ot = max(20.0, min(120.0, pred_ot))
+                
+                if pred_ot < 60: t_status, t_color, msg = "NORMAL", "#00cc66", "Temperature is within safe limits."
+                elif pred_ot < 80: t_status, t_color, msg = "WARNING", "#ffcc00", "High load detected. Ensure cooling."
+                else: t_status, t_color, msg = "RISKY", "#ff3333", "CRITICAL OVERHEATING! Reduce load."
+                
+                tm1, tm2, tm3 = st.columns(3)
+                tm1.metric("Predicted Top Oil Temp", f"{pred_ot:.1f} °C")
+                tm2.metric("Thermal Status", t_status)
+                tm3.metric("AI Confidence", f"{get_tx_confidence(model_thermal, t_input_norm):.1f} %")
+                
+                fig_t = go.Figure(go.Indicator(
+                    mode = "gauge+number", value = pred_ot,
+                    gauge = {'axis': {'range': list((20, 120))}, 'bar': {'color': "black"},
+                                'steps': list((
+                                    {'range': list((20, 60)), 'color': "rgba(0, 204, 102, 0.4)"},
+                                    {'range': list((60, 80)), 'color': "rgba(255, 204, 0, 0.4)"},
+                                    {'range': list((80, 120)), 'color': "rgba(255, 51, 51, 0.4)"}
+                                ))}))
+                fig_t.update_layout(height=350, margin=dict(t=30, b=10))
+                st.plotly_chart(fig_t, use_container_width=True)
+                st.info(f"💡 **Recommendation:** {msg}")
 
-                    st.markdown("---")
-                    t_features_list = list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
-                    t_importances = model_thermal.feature_importances_
-                    baselines_scada = np.array(list((12.5, 3.2, 8.1, 1.5, 4.5, 0.8, 12.0, 6.0)))
-                    t_input_vals = t_input_norm.values.flatten()
-                    deviations_t = np.abs(t_input_vals - baselines_scada) / baselines_scada
-                    dynamic_impacts_t = t_importances * deviations_t
-                    if dynamic_impacts_t.sum() > 0: dynamic_impacts_t = (dynamic_impacts_t / dynamic_impacts_t.sum()) * 100
-                    else: dynamic_impacts_t = t_importances * 100
-                    df_t_imp = pd.DataFrame({'Feature': t_features_list, 'Impact (%)': dynamic_impacts_t}).sort_values(by='Impact (%)')
-                    fig_t_imp = px.bar(df_t_imp, x='Impact (%)', y='Feature', orientation='h', color='Impact (%)', color_continuous_scale='Reds')
-                    fig_t_imp.update_layout(height=300, coloraxis_showscale=False)
-                    st.plotly_chart(fig_t_imp, use_container_width=True)
+                st.markdown("---")
+                t_features_list = list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
+                t_importances = model_thermal.feature_importances_
+                baselines_scada = np.array(list((12.5, 3.2, 8.1, 1.5, 4.5, 0.8, 12.0, 6.0)))
+                t_input_vals = t_input_norm.values.flatten()
+                deviations_t = np.abs(t_input_vals - baselines_scada) / baselines_scada
+                dynamic_impacts_t = t_importances * deviations_t
+                if dynamic_impacts_t.sum() > 0: dynamic_impacts_t = (dynamic_impacts_t / dynamic_impacts_t.sum()) * 100
+                else: dynamic_impacts_t = t_importances * 100
+                df_t_imp = pd.DataFrame({'Feature': t_features_list, 'Impact (%)': dynamic_impacts_t}).sort_values(by='Impact (%)')
+                fig_t_imp = px.bar(df_t_imp, x='Impact (%)', y='Feature', orientation='h', color='Impact (%)', color_continuous_scale='Reds')
+                fig_t_imp.update_layout(height=300, coloraxis_showscale=False)
+                st.plotly_chart(fig_t_imp, use_container_width=True)
 
         # --- TAB 3: BATCH ---
         with tab3:
@@ -774,6 +768,22 @@ elif st.session_state['current_page'] == 'motor':
                 fc2.markdown(f"<div class='metric-card' style='border-left-color:#9B59B6;'><h4>Bearing Risk Factor</h4><h2 style='color:#9B59B6;'>{st.session_state.bearing_risk:.1f}%</h2></div>", unsafe_allow_html=True)
                 fc3.markdown(f"<div class='metric-card' style='border-left-color:{f_color};'><h4>Total Integrated Risk</h4><h2 style='color:{f_color};'>{integrated_risk:.1f}%</h2></div>", unsafe_allow_html=True)
 
+                col_w, col_g = st.columns(list((1.5, 1)))
+                with col_w:
+                    st.markdown("#### 📊 Risk Contributor Analysis")
+                    fig_comp = go.Figure(data=list((
+                        go.Bar(name='Motor Factor', x=list(('Risk Component',)), y=list((st.session_state.motor_risk,)), marker_color='#3498DB', text=list((f"{st.session_state.motor_risk:.1f}%",)), textposition='auto'),
+                        go.Bar(name='System (Series)', x=list(('Risk Component',)), y=list((integrated_risk,)), marker_color=f_color, text=list((f"{integrated_risk:.1f}%",)), textposition='auto'),
+                        go.Bar(name='Bearing Factor', x=list(('Risk Component',)), y=list((st.session_state.bearing_risk,)), marker_color='#9B59B6', text=list((f"{st.session_state.bearing_risk:.1f}%",)), textposition='auto')
+                    )))
+                    fig_comp.update_layout(barmode='group', height=350, margin=dict(t=20, b=20))
+                    st.plotly_chart(fig_comp, use_container_width=True)
+
+                with col_g:
+                    st.plotly_chart(create_motor_gauge(integrated_risk, "OVERALL SYSTEM RISK", f_color, max_v=100.0, h=300), use_container_width=True)
+                    action_text = "EMERGENCY SHUTDOWN REQUIRED" if integrated_risk > 75 else ("SCHEDULE PREVENTIVE MAINTENANCE" if integrated_risk > 40 else "OPTIMAL PRODUCTION CONTINUES")
+                    st.markdown(f"<div style='text-align:center; padding:15px; background-color:#F8F9FA; border-radius:5px; border: 2px dashed {f_color};'><h4 style='margin:0; color:#555;'>AI Recommended Action:</h4><h3 style='margin:0; color:{f_color};'>{action_text}</h3></div>", unsafe_allow_html=True)
+
             # --- TAB 4: EXECUTIVE SUMMARY ---
             with tab4:
                 integrated_risk = (1.0 - ((1.0 - st.session_state.motor_risk/100.0) * (1.0 - st.session_state.bearing_risk/100.0))) * 100.0
@@ -799,8 +809,6 @@ elif st.session_state['current_page'] == 'motor':
                 with er2:
                     st.markdown("#### 🛡️ System Viability Index")
                     df_viability = pd.DataFrame({'Component': list(('Motor Core', 'Bearing Assembly', 'Total System')), 'Safe %': list((100.0 - st.session_state.motor_risk, 100.0 - st.session_state.bearing_risk, health_score)), 'At Risk %': list((st.session_state.motor_risk, st.session_state.bearing_risk, integrated_risk))})
-                    
-                    # تم حل مشكلة الـ TypeError هنا بتمرير قيم الـ y كـ List 
                     fig_viab = px.bar(df_viability, x="Component", y=list(("Safe %", "At Risk %")), color_discrete_sequence=list(('#2ecc71', '#e74c3c')))
                     fig_viab.update_layout(height=350, barmode='stack', margin=dict(t=40, b=10))
                     st.plotly_chart(fig_viab, use_container_width=True)
