@@ -37,7 +37,6 @@ st.markdown("""
 # ==========================================
 @st.cache_resource
 def load_all_models():
-    # Transformer Models
     try:
         m_health = joblib.load('rf_health_model.pkl')
         m_life = joblib.load('rf_life_model.pkl')
@@ -45,7 +44,6 @@ def load_all_models():
     except:
         m_health, m_life, m_thermal = None, None, None
         
-    # Motor Models
     try:
         s1 = joblib.load('scaler.pkl')
         m1 = joblib.load('motorguard_model.pkl')
@@ -64,7 +62,7 @@ model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, model
 # ==========================================
 def get_tx_confidence(model, input_df):
     try:
-        preds = np.array(tuple(tree.predict(input_df.values).item() for tree in model.estimators_))
+        preds = np.array(list((tree.predict(input_df.values).item() for tree in model.estimators_)))
         std = np.std(preds)
         conf = 98.5 - (std * 2.5)
         return max(65.0, min(99.0, conf))
@@ -85,10 +83,10 @@ def get_duval_diagnosis(ch4, c2h4, c2h2):
 
 def highlight_fmea(row):
     status = row.get('Status', '')
-    if status == 'Safe': return ('background-color: #E8F5E9; color: #00A65A; font-weight: bold',) * len(row)
-    if status == 'Warning': return ('background-color: #FEF9E7; color: #D35400; font-weight: bold',) * len(row)
-    if status == 'Danger': return ('background-color: #FDEDEC; color: #C0392B; font-weight: bold',) * len(row)
-    return ('',) * len(row)
+    if status == 'Safe': return list(('background-color: #E8F5E9; color: #00A65A; font-weight: bold',)) * len(row)
+    if status == 'Warning': return list(('background-color: #FEF9E7; color: #D35400; font-weight: bold',)) * len(row)
+    if status == 'Danger': return list(('background-color: #FDEDEC; color: #C0392B; font-weight: bold',)) * len(row)
+    return list(('',)) * len(row)
 
 def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     val = float(value)
@@ -97,14 +95,14 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
         number={'suffix': "%", 'font': {'size': 26, 'color': color, 'family': "Arial Black"}},
         title={'text': title, 'font': {'size': 16, 'color': '#333', 'weight': 'bold'}},
         gauge={
-            'axis': {'range': (0, max_v), 'tickwidth': 1, 'tickcolor': "darkblue"},
+            'axis': {'range': list((0, max_v)), 'tickwidth': 1, 'tickcolor': "darkblue"},
             'bar': {'color': color},
             'bgcolor': "white", 'borderwidth': 2, 'bordercolor': "gray",
-            'steps': (
-                {'range': (0, 40), 'color': '#E8F5E9'}, 
-                {'range': (40, 75), 'color': '#FEF9E7'}, 
-                {'range': (75, 100), 'color': '#FDEDEC'}
-            ),
+            'steps': list((
+                {'range': list((0, 40)), 'color': '#E8F5E9'}, 
+                {'range': list((40, 75)), 'color': '#FEF9E7'}, 
+                {'range': list((75, 100)), 'color': '#FDEDEC'}
+            )),
             'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': val}
         }))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
@@ -118,7 +116,7 @@ if 'tx_logged_in' not in st.session_state: st.session_state['tx_logged_in'] = Fa
 if 'motor_logged_in' not in st.session_state: st.session_state['motor_logged_in'] = False
 
 if 'fmea_log' not in st.session_state: 
-    st.session_state['fmea_log'] = pd.DataFrame(columns=('Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required'))
+    st.session_state['fmea_log'] = pd.DataFrame(columns=list(('Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required')))
 if 'latest_eval' not in st.session_state: 
     st.session_state['latest_eval'] = None
 
@@ -126,7 +124,7 @@ if 'motor_risk' not in st.session_state: st.session_state.motor_risk = 0.0
 if 'bearing_risk' not in st.session_state: st.session_state.bearing_risk = 0.0
 if 'motor_faults' not in st.session_state: st.session_state.motor_faults = {'HDF': 0.0, 'OSF': 0.0, 'PWF': 0.0, 'TWF': 0.0}
 if 'inspection_log' not in st.session_state: 
-    st.session_state['inspection_log'] = pd.DataFrame(columns=('Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt'))
+    st.session_state['inspection_log'] = pd.DataFrame(columns=list(('Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt')))
 
 def go_to_portal():
     st.session_state['current_page'] = 'portal'
@@ -139,7 +137,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<br><br><h1 style='text-align: center; color: #0b2e59;'>⚡ PowerGuard AI Enterprise Portal</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #666;'>Select Diagnostic Module</h3><br><br>", unsafe_allow_html=True)
     
-    col1, col2, col3, col4 = st.columns((1, 2, 2, 1))
+    col1, col2, col3, col4 = st.columns(list((1, 2, 2, 1)))
     with col2:
         st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer & Reactor</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
         if st.button("Launch Transformer Guard", use_container_width=True):
@@ -152,7 +150,7 @@ if st.session_state['current_page'] == 'portal':
             st.session_state['current_page'] = 'motor'
             st.rerun()
 
-    st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. All Rights Reserved.</strong><br><em>Confidential and Proprietary. Enterprise Edition.</em></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 6. المحولات (Transformer Guard)
@@ -161,7 +159,7 @@ elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br><br><h1 style='text-align: center; color: #4da6ff;'>⚡ TransformerGuard Login</h1>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns((1, 2, 1))
+        col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
             with st.form("tx_login_form"):
                 st.warning("🔒 Restricted Access. Authorized Personnel Only.")
@@ -173,7 +171,7 @@ elif st.session_state['current_page'] == 'transformer':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns((10, 1))
+        col_l, col_r = st.columns(list((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -192,11 +190,11 @@ elif st.session_state['current_page'] == 'transformer':
             st.error("⚠️ Model files not detected! Please ensure .pkl files are uploaded.")
             st.stop()
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(("🧪 DGA & Quality", "🌡️ THERMAL LOAD", "📁 Batch", "📑 RISK Logs", "📄 AI Report"))
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(list(("🧪 DGA & Quality", "🌡️ THERMAL LOAD", "📁 Batch", "📑 RISK Logs", "📄 AI Report")))
 
         # --- TAB 1 ---
         with tab1:
-            col_in, col_out = st.columns((1, 2.2))
+            col_in, col_out = st.columns(list((1, 2.2)))
             with col_in:
                 st.markdown("### 📊 DGA Parameters")
                 with st.form("tx_input_form"):
@@ -218,8 +216,8 @@ elif st.session_state['current_page'] == 'transformer':
 
             with col_out:
                 if sub_tx:
-                    input_df = pd.DataFrame(((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc),), 
-                                            columns=('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
+                    input_df = pd.DataFrame(list(((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc),)), 
+                                            columns=list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')))
                     
                     h_score = float(model_health.predict(input_df).item())
                     l_yrs = float(model_life.predict(input_df).item())
@@ -247,15 +245,17 @@ elif st.session_state['current_page'] == 'transformer':
                     m3.metric("Life Expectancy", f"{l_yrs:.1f} Yrs")
                     m4.metric("AI Confidence", f"{get_tx_confidence(model_health, input_df):.1f} %")
 
-                    col_g, col_d = st.columns((1, 1.2))
+                    col_g, col_d = st.columns(list((1, 1.2)))
                     with col_g:
                         fig_g = go.Figure(go.Indicator(
                             mode="gauge+number", value=h_score,
-                            gauge={'axis': {'range': (0, 60), 'tickwidth': 2, 'tickcolor': "black"},
+                            gauge={'axis': {'range': list((0, 60)), 'tickwidth': 2, 'tickcolor': "black"},
                                    'bar': {'color': "black"},
-                                   'steps': ({'range': (0, 30), 'color': "#00cc66"},
-                                             {'range': (30, 45), 'color': "#ffcc00"},
-                                             {'range': (45, 60), 'color': "#ff3333"})}))
+                                   'steps': list((
+                                       {'range': list((0, 30)), 'color': "#00cc66"},
+                                       {'range': list((30, 45)), 'color': "#ffcc00"},
+                                       {'range': list((45, 60)), 'color': "#ff3333"}
+                                   ))}))
                         fig_g.update_layout(height=280, margin=dict(t=30, b=10))
                         st.plotly_chart(fig_g, use_container_width=True)
                         st.markdown(f"<h2 style='text-align: center; color: {color}; margin-top:-30px;'>{status}</h2>", unsafe_allow_html=True)
@@ -266,17 +266,17 @@ elif st.session_state['current_page'] == 'transformer':
                         else: p_ch4, p_c2h4, p_c2h2 = 33.33, 33.33, 33.33 
                         
                         fig_tri = go.Figure()
-                        fig_tri.add_trace(go.Scatterternary(a=(100, 0, 0), b=(0, 100, 0), c=(0, 0, 100), mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
-                        fig_tri.add_trace(go.Scatterternary(a=(p_ch4,), b=(p_c2h4,), c=(p_c2h2,), mode='markers', marker=dict(size=14, color='red', symbol='cross')))
+                        fig_tri.add_trace(go.Scatterternary(a=list((100, 0, 0)), b=list((0, 100, 0)), c=list((0, 0, 100)), mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
+                        fig_tri.add_trace(go.Scatterternary(a=list((p_ch4,)), b=list((p_c2h4,)), c=list((p_c2h2,)), mode='markers', marker=dict(size=14, color='red', symbol='cross')))
                         fig_tri.update_layout(title="Duval Triangle", height=320, margin=dict(b=0), ternary=dict(sum=100, aaxis=dict(title="CH4 %", min=0), baxis=dict(title="C2H4 %", min=0), caxis=dict(title="C2H2 %", min=0)), showlegend=False)
                         st.plotly_chart(fig_tri, use_container_width=True)
                         st.info(f"**Diagnosis:** {diagnosis}")
                     
                     st.markdown("---")
                     st.markdown("### 📊 Variables Impact")
-                    features_list = ('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')
+                    features_list = list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
                     importances = model_health.feature_importances_
-                    baselines_dga = np.array((5.0, 500.0, 10000.0, 2.0, 100.0, 300.0, 1.0, 5.0, 0.1, 0.1, 0.05, 45.0, 70.0, 2.0))
+                    baselines_dga = np.array(list((5.0, 500.0, 10000.0, 2.0, 100.0, 300.0, 1.0, 5.0, 0.1, 0.1, 0.05, 45.0, 70.0, 2.0)))
                     input_vals = input_df.values.flatten()
                     deviations = np.abs(input_vals - baselines_dga) / baselines_dga
                     dynamic_impacts = importances * deviations
@@ -290,7 +290,7 @@ elif st.session_state['current_page'] == 'transformer':
         # --- TAB 2 ---
         with tab2:
             st.markdown("### 🌡️ Thermal Load Predictive Analysis")
-            col_t_in, col_t_out = st.columns((1, 1.5))
+            col_t_in, col_t_out = st.columns(list((1, 1.5)))
             with col_t_in:
                 with st.form("tx_thermal_form"):
                     capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0)
@@ -310,12 +310,12 @@ elif st.session_state['current_page'] == 'transformer':
                     total_active_load = hufl + mufl + lufl
                     load_factor_percent = (total_active_load / capacity_kva) * 100.0
                     norm_ratio = 50.0 / capacity_kva
-                    t_input_norm = pd.DataFrame(((hufl*norm_ratio, hull*norm_ratio, mufl*norm_ratio, mull*norm_ratio, lufl*norm_ratio, lull*norm_ratio, hour, month),), 
-                                           columns=('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
+                    t_input_norm = pd.DataFrame(list(((hufl*norm_ratio, hull*norm_ratio, mufl*norm_ratio, mull*norm_ratio, lufl*norm_ratio, lull*norm_ratio, hour, month),)), 
+                                           columns=list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')))
                     
                     pred_ot = float(model_thermal.predict(t_input_norm).item())
                     load_penalty = (load_factor_percent - 80.0) * 1.2 if load_factor_percent > 80.0 else 0.0
-                    ambient_penalty = 12.0 if month in (5, 6, 7, 8, 9) and 11 <= hour <= 16 else 0.0
+                    ambient_penalty = 12.0 if month in list((5, 6, 7, 8, 9)) and 11 <= hour <= 16 else 0.0
                     
                     if load_penalty > 0 or ambient_penalty > 0: pred_ot = pred_ot + load_penalty + ambient_penalty
                     pred_ot = max(20.0, min(120.0, pred_ot))
@@ -331,18 +331,20 @@ elif st.session_state['current_page'] == 'transformer':
                     
                     fig_t = go.Figure(go.Indicator(
                         mode = "gauge+number", value = pred_ot,
-                        gauge = {'axis': {'range': (20, 120)}, 'bar': {'color': "black"},
-                                 'steps': ({'range': (20, 60), 'color': "rgba(0, 204, 102, 0.4)"},
-                                           {'range': (60, 80), 'color': "rgba(255, 204, 0, 0.4)"},
-                                           {'range': (80, 120), 'color': "rgba(255, 51, 51, 0.4)"})}))
+                        gauge = {'axis': {'range': list((20, 120))}, 'bar': {'color': "black"},
+                                 'steps': list((
+                                     {'range': list((20, 60)), 'color': "rgba(0, 204, 102, 0.4)"},
+                                     {'range': list((60, 80)), 'color': "rgba(255, 204, 0, 0.4)"},
+                                     {'range': list((80, 120)), 'color': "rgba(255, 51, 51, 0.4)"}
+                                 ))}))
                     fig_t.update_layout(height=350, margin=dict(t=30, b=10))
                     st.plotly_chart(fig_t, use_container_width=True)
                     st.info(f"💡 **Recommendation:** {msg}")
 
                     st.markdown("---")
-                    t_features_list = ('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')
+                    t_features_list = list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
                     t_importances = model_thermal.feature_importances_
-                    baselines_scada = np.array((12.5, 3.2, 8.1, 1.5, 4.5, 0.8, 12.0, 6.0))
+                    baselines_scada = np.array(list((12.5, 3.2, 8.1, 1.5, 4.5, 0.8, 12.0, 6.0)))
                     t_input_vals = t_input_norm.values.flatten()
                     deviations_t = np.abs(t_input_vals - baselines_scada) / baselines_scada
                     dynamic_impacts_t = t_importances * deviations_t
@@ -356,29 +358,29 @@ elif st.session_state['current_page'] == 'transformer':
         # --- TAB 3: BATCH ---
         with tab3:
             st.markdown("### 📁 Batch Historical Analysis")
-            analysis_type = st.radio("Select Analysis Type:", ("🧪 DGA (Health Index)", "🌡️ SCADA (Oil Temp)"))
-            up = st.file_uploader("Upload File", type=('csv', 'xlsx'))
+            analysis_type = st.radio("Select Analysis Type:", list(("🧪 DGA (Health Index)", "🌡️ SCADA (Oil Temp)")))
+            up = st.file_uploader("Upload File", type=list(('csv', 'xlsx')))
             if up:
                 df_b = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
                 if "DGA" in analysis_type:
-                    req_cols = ('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')
+                    req_cols = list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
                     if all(c in df_b.columns for c in req_cols):
-                        df_b['Predicted_Health'] = model_health.predict(df_b[list(req_cols)])
+                        df_b['Predicted_Health'] = model_health.predict(df_b[req_cols])
                         st.plotly_chart(px.line(df_b, y='Predicted_Health', markers=True), use_container_width=True)
                 elif "SCADA" in analysis_type:
-                    req_cols = ('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')
+                    req_cols = list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
                     if all(c in df_b.columns for c in req_cols):
-                        df_b['Predicted_Oil_Temp'] = model_thermal.predict(df_b[list(req_cols)])
-                        st.plotly_chart(px.line(df_b, y='Predicted_Oil_Temp', markers=True, color_discrete_sequence=('#ff3333',)), use_container_width=True)
+                        df_b['Predicted_Oil_Temp'] = model_thermal.predict(df_b[req_cols])
+                        st.plotly_chart(px.line(df_b, y='Predicted_Oil_Temp', markers=True, color_discrete_sequence=list(('#ff3333',))), use_container_width=True)
 
         # --- TAB 4: RISK ---
         with tab4:
             st.markdown("### 📑 Overall Transformer Risk Assessment (AHI)")
-            col_ex_in, col_ex_out = st.columns((1, 1.5))
+            col_ex_in, col_ex_out = st.columns(list((1, 1.5)))
             with col_ex_in:
                 with st.form("tx_exec_form"):
                     c_id1, c_id2 = st.columns(2)
-                    tx_list = tuple(f"T{i:02d} (Substation Unit)" for i in range(1, 11))
+                    tx_list = list((f"T{i:02d} (Substation Unit)" for i in range(1, 11)))
                     asset_selection = c_id1.selectbox("Select Asset:", tx_list)
                     e_capacity = c_id2.number_input("Rated Capacity", min_value=10.0, value=50.0)
                     
@@ -403,8 +405,8 @@ elif st.session_state['current_page'] == 'transformer':
             with col_ex_out:
                 if gen_report:
                     asset_id = asset_selection.split(' ') 
-                    dga_input = pd.DataFrame(((e_h2, 500.0, 10000.0, e_ch4, e_co, e_co2, e_c2h4, 5.0, e_c2h2, 0.1, e_pf, e_ift, e_dr, e_wc),), 
-                                            columns=('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
+                    dga_input = pd.DataFrame(list(((e_h2, 500.0, 10000.0, e_ch4, e_co, e_co2, e_c2h4, 5.0, e_c2h2, 0.1, e_pf, e_ift, e_dr, e_wc),)), 
+                                            columns=list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')))
                     health_score = float(model_health.predict(dga_input).item())
 
                     cf_ex = 0.0
@@ -420,12 +422,12 @@ elif st.session_state['current_page'] == 'transformer':
                     
                     load_pct_ex = (e_hufl / e_capacity) * 100.0
                     n_ratio = 50.0 / e_capacity
-                    scada_input_norm = pd.DataFrame(((e_hufl*n_ratio, (e_hufl*0.2)*n_ratio, (e_hufl*0.6)*n_ratio, (e_hufl*0.1)*n_ratio, (e_hufl*0.3)*n_ratio, (e_hufl*0.05)*n_ratio, e_hour, e_month),), 
-                                           columns=('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
+                    scada_input_norm = pd.DataFrame(list(((e_hufl*n_ratio, (e_hufl*0.2)*n_ratio, (e_hufl*0.6)*n_ratio, (e_hufl*0.1)*n_ratio, (e_hufl*0.3)*n_ratio, (e_hufl*0.05)*n_ratio, e_hour, e_month),)), 
+                                           columns=list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')))
                     ot_temp = float(model_thermal.predict(scada_input_norm).item())
 
                     load_pen = (load_pct_ex - 80.0) * 1.2 if load_pct_ex > 80.0 else 0.0
-                    amb_pen = 12.0 if e_month in (5, 6, 7, 8, 9) and 11 <= e_hour <= 16 else 0.0
+                    amb_pen = 12.0 if e_month in list((5, 6, 7, 8, 9)) and 11 <= e_hour <= 16 else 0.0
                     if load_pen > 0 or amb_pen > 0: ot_temp = ot_temp + load_pen + amb_pen
                     ot_temp = max(20.0, min(120.0, ot_temp))
 
@@ -446,7 +448,7 @@ elif st.session_state['current_page'] == 'transformer':
                         'dga_input_df': dga_input, 'thermal_input_df': scada_input_norm
                     }
                     
-                    new_entry = pd.DataFrame(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' '), 'RPN Level': rpn_level, 'Action Required': final_action},))
+                    new_entry = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' '), 'RPN Level': rpn_level, 'Action Required': final_action},)))
                     st.session_state['fmea_log'] = pd.concat((st.session_state['fmea_log'], new_entry), ignore_index=True).tail(100)
                     
                     st.markdown(f"<h2 style='text-align: center; color: {final_color}; border: 2px solid {final_color}; padding: 10px; border-radius: 5px;'>{final_status}</h2>", unsafe_allow_html=True)
@@ -459,8 +461,12 @@ elif st.session_state['current_page'] == 'transformer':
                     
                     fig_risk = go.Figure(go.Indicator(
                         mode = "gauge+number", value = overall_risk,
-                        gauge = {'axis': {'range': (0, 100)}, 'bar': {'color': "black"},
-                                 'steps': ({'range': (0, 35), 'color': "rgba(0, 204, 102, 0.4)"}, {'range': (35, 70), 'color': "rgba(255, 204, 0, 0.4)"}, {'range': (70, 100), 'color': "rgba(255, 51, 51, 0.4)"})}))
+                        gauge = {'axis': {'range': list((0, 100))}, 'bar': {'color': "black"},
+                                 'steps': list((
+                                     {'range': list((0, 35)), 'color': "rgba(0, 204, 102, 0.4)"}, 
+                                     {'range': list((35, 70)), 'color': "rgba(255, 204, 0, 0.4)"}, 
+                                     {'range': list((70, 100)), 'color': "rgba(255, 51, 51, 0.4)"}
+                                 ))}))
                     fig_risk.update_layout(height=300, margin=dict(t=30, b=10))
                     st.plotly_chart(fig_risk, use_container_width=True)
             
@@ -471,28 +477,107 @@ elif st.session_state['current_page'] == 'transformer':
                 try: st.dataframe(st.session_state['fmea_log'].style.map(color_risk, subset=['Status']), use_container_width=True)
                 except: st.dataframe(st.session_state['fmea_log'].style.applymap(color_risk, subset=['Status']), use_container_width=True)
 
-        # --- TAB 5: AI REPORT ---
+        # --- TAB 5: AI REPORT (RESTORED FULL VERSION) ---
         with tab5:
-            if st.session_state.get('latest_eval') is None: st.markdown("<br><br><h3 style='text-align: center; color: #888;'>💡 Generate assessment from TAB 4 first.</h3>", unsafe_allow_html=True)
+            if st.session_state.get('latest_eval') is None: 
+                st.markdown("<br><br><h3 style='text-align: center; color: #888;'>💡 Please generate a risk assessment from TAB 4 first.</h3>", unsafe_allow_html=True)
             else:
                 e_data = st.session_state['latest_eval']
                 st.markdown(f"<div style='background-color: rgba(77, 166, 255, 0.1); padding: 15px; border-left: 5px solid #4da6ff; border-radius: 5px;'><h2 style='margin:0; color: #0b2e59;'>📄 AI Executive Diagnostic Report</h2><p style='margin:0; color: #555555;'>Asset ID: <b>{e_data['asset_id']}</b> | Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p></div><br>", unsafe_allow_html=True)
                 
+                # 1. Overall System Risk & FMEA SECTION
+                st.markdown("### 🎯 1. Overall System Risk & FMEA Directive")
+                r_col1, r_col2 = st.columns(list((1, 1.8)))
+                
+                with r_col1:
+                    fig_r = go.Figure(go.Indicator(
+                        mode = "gauge+number", value = e_data['overall_risk'],
+                        number={'font': {'size': 40, 'color': '#0b2e59'}},
+                        gauge = {'axis': {'range': list((0, 100)), 'tickwidth': 1, 'tickcolor': "black"},
+                                 'bar': {'color': "rgba(0,0,0,0.5)", 'thickness': 0.1},
+                                 'steps': list((
+                                     {'range': list((0, 35)), 'color': "#00cc66"},
+                                     {'range': list((35, 70)), 'color': "#ffcc00"},
+                                     {'range': list((70, 100)), 'color': "#ff3333"}
+                                 ))}))
+                    fig_r.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig_r, use_container_width=True)
+                    
+                with r_col2:
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    def color_r(val): return f"color: {'#00cc66' if val == 'EXCELLENT' else '#ffcc00' if val == 'WATCH' else '#ff3333'}; font-weight: bold"
+                    latest_log = st.session_state['fmea_log'].tail(1)
+                    try: st.dataframe(latest_log.style.map(color_r, subset=['Status']), use_container_width=True)
+                    except: st.dataframe(latest_log.style.applymap(color_r, subset=['Status']), use_container_width=True)
+                    st.markdown(f"**Mandatory Action:** <span style='color:{e_data['color']}; font-weight:bold;'>{e_data['action']}</span>", unsafe_allow_html=True)
+
+                st.markdown("---")
+
+                # 2. VISUAL ANALYTICS SECTION
+                st.markdown("### 📊 2. AI Visual Analytics (Combined Root Cause Identifiers)")
+                v_col1, v_col2 = st.columns(2)
+                
+                with v_col1:
+                    ch4_v, c2h4_v, c2h2_v = e_data['inputs']['ch4'], e_data['inputs']['c2h4'], e_data['inputs']['c2h2']
+                    tot_gas_v = ch4_v + c2h4_v + c2h2_v
+                    if tot_gas_v > 0: p_ch4_v, p_c2h4_v, p_c2h2_v = (ch4_v/tot_gas_v)*100, (c2h4_v/tot_gas_v)*100, (c2h2_v/tot_gas_v)*100
+                    else: p_ch4_v, p_c2h4_v, p_c2h2_v = 33.33, 33.33, 33.33 
+                    
+                    fig_tri_v = go.Figure()
+                    fig_tri_v.add_trace(go.Scatterternary(a=list((100, 0, 0)), b=list((0, 100, 0)), c=list((0, 0, 100)), mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
+                    fig_tri_v.add_trace(go.Scatterternary(a=list((p_ch4_v,)), b=list((p_c2h4_v,)), c=list((p_c2h2_v,)), mode='markers', marker=dict(size=14, color='red', symbol='cross', line=dict(width=2, color='black')), name='Diagnosis'))
+                    fig_tri_v.update_layout(title={'text': "Duval Triangle (Fault Type)", 'font': {'color': 'black'}, 'y':0.95, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top'}, height=450, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)", ternary=dict(sum=100, aaxis=dict(title="CH4 %", min=0), baxis=dict(title="C2H4 %", min=0), caxis=dict(title="C2H2 %", min=0)), showlegend=False)
+                    st.plotly_chart(fig_tri_v, use_container_width=True)
+                    st.markdown(f"<h4 style='text-align: center; color: #ff3333; margin-top:-30px;'>Diagnostic Result: {e_data['duval']}</h4>", unsafe_allow_html=True)
+
+                with v_col2:
+                    dga_features = list(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'))
+                    dga_importances = model_health.feature_importances_
+                    dga_baselines = np.array(list((5.0, 500.0, 10000.0, 2.0, 100.0, 300.0, 1.0, 5.0, 0.1, 0.1, 0.05, 45.0, 70.0, 2.0)))
+                    dga_vals = e_data['dga_input_df'].values.flatten()
+                    dga_dev = np.abs(dga_vals - dga_baselines) / dga_baselines
+                    dga_impact = dga_importances * dga_dev
+
+                    thm_features = list(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'))
+                    thm_importances = model_thermal.feature_importances_
+                    thm_baselines = np.array(list((12.5, 3.2, 8.1, 1.5, 4.5, 0.8, 12.0, 6.0)))
+                    thm_vals = e_data['thermal_input_df'].values.flatten()
+                    thm_dev = np.abs(thm_vals - thm_baselines) / thm_baselines
+                    thm_impact = thm_importances * thm_dev
+
+                    all_features = dga_features + thm_features
+                    all_impacts = np.concatenate((dga_impact, thm_impact))
+                    
+                    if all_impacts.sum() > 0: all_impacts = (all_impacts / all_impacts.sum()) * 100
+                    else: all_impacts = np.concatenate((dga_importances, thm_importances)) * 100
+                        
+                    df_imp = pd.DataFrame({'Feature': all_features, 'Impact (%)': all_impacts})
+                    df_imp = df_imp.sort_values(by='Impact (%)', ascending=False).head(10).sort_values(by='Impact (%)', ascending=True)
+
+                    fig_imp = px.bar(df_imp, x='Impact (%)', y='Feature', orientation='h', color='Impact (%)', color_continuous_scale='Turbo')
+                    fig_imp.update_layout(title={'text': "Top 10 Impactful Variables (Combined)", 'font': {'color': 'black'}}, height=400, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", coloraxis_showscale=False, font={'color': 'black'})
+                    st.plotly_chart(fig_imp, use_container_width=True)
+
+                st.markdown("---")
+
+                # 3. TEXTUAL AI FINDINGS SECTION
+                st.markdown("### 🧠 3. Automated Expert System Findings")
+                
                 issues_dga, issues_thermal = list(), list()
-                if e_data['dga_score'] > 45: issues_dga.append(f"⚠️ AI Risk Alert: Abnormal gas ratios.")
-                elif e_data['dga_score'] > 30: issues_dga.append(f"🟡 Early Warning: Mild deviations in gases.")
-                if e_data['inputs']['wc'] > 25: issues_dga.append("🚨 Critical Water Content (>25 ppm)")
-                if e_data['inputs']['ift'] < 20: issues_dga.append("⚠️ Low Interfacial Tension (<20 mN/m)")
-                if e_data['inputs']['dr'] < 35: issues_dga.append("🚨 Low Dielectric Rigidity (<35 kV)")
-                if e_data['inputs']['pf'] > 1.5: issues_dga.append("⚠️ High Power Factor (>1.5%)")
-                if e_data['inputs']['co'] > 500: issues_dga.append("🚨 High Carbon Monoxide (>500 ppm)")
-                if e_data['inputs']['c2h2'] > 10: issues_dga.append("🚨 High Acetylene (>10 ppm)")
+                if e_data['dga_score'] > 45: issues_dga.append(f"⚠️ **AI Risk Alert:** Abnormal gas ratios detected.")
+                elif e_data['dga_score'] > 30: issues_dga.append(f"🟡 **Early Warning:** Mild deviations in gases.")
+                if e_data['inputs']['wc'] > 25: issues_dga.append("🚨 **Critical Water Content (>25 ppm)**")
+                if e_data['inputs']['ift'] < 20: issues_dga.append("⚠️ **Low Interfacial Tension (<20 mN/m)**")
+                if e_data['inputs']['dr'] < 35: issues_dga.append("🚨 **Low Dielectric Rigidity (<35 kV)**")
+                if e_data['inputs']['pf'] > 1.5: issues_dga.append("⚠️ **High Power Factor (>1.5%)**")
+                if e_data['inputs']['co'] > 500: issues_dga.append("🚨 **High Carbon Monoxide (>500 ppm)**")
+                if e_data['inputs']['c2h2'] > 10: issues_dga.append("🚨 **High Acetylene (>10 ppm)**")
                 if not issues_dga: issues_dga.append("✅ DGA chemistry is normal and healthy.")
 
-                if e_data['pred_temp'] > 80: issues_thermal.append(f"🚨 Overheating Alert ({e_data['pred_temp']:.1f} °C)")
-                elif e_data['pred_temp'] > 60: issues_thermal.append(f"🟡 Elevated Temp ({e_data['pred_temp']:.1f} °C)")
-                if e_data['load_factor'] > 80.0: issues_thermal.append(f"⚠️ High Load Factor ({e_data['load_factor']:.1f}%)")
-                if e_data['inputs']['month'] in (5, 6, 7, 8, 9) and 11 <= e_data['inputs']['hour'] <= 16: issues_thermal.append("☀️ Harsh Ambient Conditions")
+                if e_data['pred_temp'] > 80: issues_thermal.append(f"🚨 **Overheating Alert ({e_data['pred_temp']:.1f} °C)**")
+                elif e_data['pred_temp'] > 60: issues_thermal.append(f"🟡 **Elevated Temp ({e_data['pred_temp']:.1f} °C)**")
+                if e_data['load_factor'] > 80.0: issues_thermal.append(f"⚠️ **High Load Factor ({e_data['load_factor']:.1f}%)**")
+                if e_data['inputs']['month'] in list((5, 6, 7, 8, 9)) and 11 <= e_data['inputs']['hour'] <= 16: issues_thermal.append("☀️ **Harsh Ambient Conditions**")
                 if not issues_thermal: issues_thermal.append("✅ Thermal parameters are within safe limits.")
 
                 col_t1, col_t2 = st.columns(2)
@@ -510,7 +595,7 @@ elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br><br><h1 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h1>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns((1, 2, 1))
+        col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
             with st.form("motor_login_form"):
                 st.warning("🔒 Restricted Access. Authorized Personnel Only.")
@@ -522,7 +607,7 @@ elif st.session_state['current_page'] == 'motor':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns((10, 1))
+        col_l, col_r = st.columns(list((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -542,15 +627,15 @@ elif st.session_state['current_page'] == 'motor':
         if not models_ready:
             st.error("⚠️ Motor Models not found! Check .pkl files.")
         else:
-            tab1, tab2, tab3, tab4 = st.tabs(("⚙️ Motor Diagnostics", "📳 Bearing Vibration", "🔗 Reliability Fusion", "📊 Executive Summary"))
+            tab1, tab2, tab3, tab4 = st.tabs(list(("⚙️ Motor Diagnostics", "📳 Bearing Vibration", "🔗 Reliability Fusion", "📊 Executive Summary")))
 
             # --- TAB 1: MOTOR DIAGNOSTICS ---
             with tab1:
-                c_in, c_out = st.columns((1, 2.5))
+                c_in, c_out = st.columns(list((1, 2.5)))
                 with c_in:
                     st.markdown("#### 🎛️ Live Sensor Telemetry")
                     motor_options = {'L (Low - Standard Build)': 0, 'M (Medium - Commercial)': 1, 'H (High - Industrial Grade)': 2}
-                    motor_type = st.selectbox("Motor Quality Grade ❓", tuple(motor_options.keys()), index=1)
+                    motor_type = st.selectbox("Motor Quality Grade ❓", list(motor_options.keys()), index=1)
                     st.markdown("---")
                     st.markdown("#### 🌡️ Thermal Metrics")
                     air_temp = st.number_input("Ambient Air Temp [K] ❓", min_value=290.0, max_value=310.0, value=298.0, step=0.1)
@@ -562,8 +647,8 @@ elif st.session_state['current_page'] == 'motor':
                     tool_wear = st.slider("Tool Wear Level [min] ❓", 0, 260, 50, 1)
                     
                 with c_out:
-                    raw_df = pd.DataFrame({'Type': (motor_options[motor_type],), 'Air temperature [K]': (air_temp,), 'Process temperature [K]': (process_temp,), 'Rotational speed [rpm]': (rpm,), 'Torque [Nm]': (torque,), 'Tool wear [min]': (tool_wear,)})
-                    cols_to_scale = ['Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]']
+                    raw_df = pd.DataFrame({'Type': list((motor_options[motor_type],)), 'Air temperature [K]': list((air_temp,)), 'Process temperature [K]': list((process_temp,)), 'Rotational speed [rpm]': list((rpm,)), 'Torque [Nm]': list((torque,)), 'Tool wear [min]': list((tool_wear,))})
+                    cols_to_scale = list(('Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]'))
                     processed_df = raw_df.copy()
                     processed_df[cols_to_scale] = scaler1.transform(raw_df[cols_to_scale])
                     
@@ -571,7 +656,7 @@ elif st.session_state['current_page'] == 'motor':
                     probs_list = np.array(probs_matrix).flatten().tolist()
                     
                     if hasattr(model1, 'classes_'):
-                        classes = tuple(str(c).strip().upper() for c in getattr(model1, 'classes_'))
+                        classes = list((str(c).strip().upper() for c in getattr(model1, 'classes_')))
                         probs_dict = dict(zip(classes, probs_list))
                         p_normal = float(probs_dict.get('NORMAL', 0.0)) * 100.0
                         p_hdf_raw = float(probs_dict.get('HEAT DISSIPATION FAILURE (HDF)', probs_dict.get('HDF', 0.0))) * 100.0
@@ -603,7 +688,7 @@ elif st.session_state['current_page'] == 'motor':
 
                     calc_overall_risk = (1.0 - ((1.0 - p_hdf/100.0) * (1.0 - p_osf/100.0) * (1.0 - p_pwf/100.0) * (1.0 - p_twf/100.0))) * 100.0
                     overall_risk_pct = min(100.0, max(raw_overall_risk, calc_overall_risk))
-                    ai_confidence = p_normal if overall_risk_pct < 50 else max((p_hdf, p_osf, p_pwf, p_twf))
+                    ai_confidence = p_normal if overall_risk_pct < 50 else max(list((p_hdf, p_osf, p_pwf, p_twf)))
 
                     fault_dict = {'Heat (HDF)': p_hdf, 'Overstrain (OSF)': p_osf, 'Power (PWF)': p_pwf, 'Wear (TWF)': p_twf}
                     highest_fault_name = max(fault_dict, key=fault_dict.get)
@@ -617,7 +702,7 @@ elif st.session_state['current_page'] == 'motor':
                         
                     st.markdown(f"<div style='background-color:{status_bg}; border: 2px solid {status_color}; padding: 15px; border-radius: 10px; text-align: center; margin-bottom:20px;'><h2 style='color:{status_color}; margin:0;'>{status_title}</h2><p style='color:#555; font-size:16px; margin:0;'>Live Assessment based on AI & Expert Overrides</p></div>", unsafe_allow_html=True)
                         
-                    colA, colB = st.columns((1, 1.5))
+                    colA, colB = st.columns(list((1, 1.5)))
                     with colA:
                         st.markdown(f"<br><div class='metric-card'><h4 style='color:#666; margin-bottom:5px;'>AI Confidence Score</h4><h2 style='color:#3498DB; margin:0;'>{ai_confidence:.1f}%</h2></div>", unsafe_allow_html=True)
                         st.markdown(f"<div class='metric-card' style='border-left-color: {status_color};'><h4 style='color:#666; margin-bottom:5px;'>Primary FMEA Concern</h4><h2 style='color:{status_color}; margin:0;'>{diag_display}</h2></div>", unsafe_allow_html=True)
@@ -632,12 +717,12 @@ elif st.session_state['current_page'] == 'motor':
                     with g3: st.plotly_chart(create_motor_gauge(p_pwf, "Power (PWF)", "#E74C3C", h=160), use_container_width=True)
                     with g4: st.plotly_chart(create_motor_gauge(p_twf, "Wear (TWF)", "#34495E", h=160), use_container_width=True)
 
-                    new_log_raw = pd.DataFrame(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset': 'Motor Core', 'Risk Level': f"{overall_risk_pct:.1f}%", 'Primary FMEA': diag_display, 'Status': sys_status, 'Grade': str(motor_type).split(' '), 'Air Temp [K]': air_temp, 'Core Temp [K]': process_temp, 'RPM': rpm, 'Torque [Nm]': torque, 'Wear [min]': tool_wear, 'Vib RMS': '-', 'Vib Kurt': '-'},))
+                    new_log_raw = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset': 'Motor Core', 'Risk Level': f"{overall_risk_pct:.1f}%", 'Primary FMEA': diag_display, 'Status': sys_status, 'Grade': str(motor_type).split(' '), 'Air Temp [K]': air_temp, 'Core Temp [K]': process_temp, 'RPM': rpm, 'Torque [Nm]': torque, 'Wear [min]': tool_wear, 'Vib RMS': '-', 'Vib Kurt': '-'},)))
                     st.session_state.inspection_log = pd.concat((new_log_raw, st.session_state.inspection_log), ignore_index=True).head(30)
 
             # --- TAB 2: BEARING VIBRATION ---
             with tab2:
-                cv1, cv2 = st.columns((1.5, 1))
+                cv1, cv2 = st.columns(list((1.5, 1)))
                 with cv1:
                     st.markdown("#### 🎚️ Simulator & Key Metrics")
                     sim_level = st.slider("Degradation Phase (%) ❓", 0, 100, 10)
@@ -670,12 +755,12 @@ elif st.session_state['current_page'] == 'motor':
                     st.plotly_chart(create_motor_gauge(b_risk, "BEARING VIBRATION RISK", b_color, max_v=100.0, h=280), use_container_width=True)
 
                 st.markdown("---")
-                df_b = pd.DataFrame({'Phase': ('Normal', 'Early Wear', 'Warning', 'Failure'), 'Probability': (p_b_norm, p_b_early, p_b_warn, p_b_fail)})
+                df_b = pd.DataFrame({'Phase': list(('Normal', 'Early Wear', 'Warning', 'Failure')), 'Probability': list((p_b_norm, p_b_early, p_b_warn, p_b_fail))})
                 fig_b = px.bar(df_b, x='Probability', y='Phase', orientation='h', color='Phase', color_discrete_map={'Normal': '#2ecc71', 'Early Wear': '#f1c40f', 'Warning': '#e67e22', 'Failure': '#e74c3c'})
                 fig_b.update_layout(height=250)
                 st.plotly_chart(fig_b, use_container_width=True)
 
-                new_log_b = pd.DataFrame(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset': 'Bearing', 'Risk Level': f"{b_risk:.1f}%", 'Primary FMEA': 'Vibration Anomalies', 'Status': b_status, 'Grade': '-', 'Air Temp [K]': '-', 'Core Temp [K]': '-', 'RPM': '-', 'Torque [Nm]': '-', 'Wear [min]': '-', 'Vib RMS': round(r_val, 3), 'Vib Kurt': round(k_val, 2)},))
+                new_log_b = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset': 'Bearing', 'Risk Level': f"{b_risk:.1f}%", 'Primary FMEA': 'Vibration Anomalies', 'Status': b_status, 'Grade': '-', 'Air Temp [K]': '-', 'Core Temp [K]': '-', 'RPM': '-', 'Torque [Nm]': '-', 'Wear [min]': '-', 'Vib RMS': round(r_val, 3), 'Vib Kurt': round(k_val, 2)},)))
                 st.session_state.inspection_log = pd.concat((new_log_b, st.session_state.inspection_log), ignore_index=True).head(30)
 
             # --- TAB 3: RELIABILITY FUSION ---
@@ -703,18 +788,20 @@ elif st.session_state['current_page'] == 'motor':
                 e4.metric("Maintenance Urgency", "CRITICAL" if integrated_risk > 75 else ("MODERATE" if integrated_risk > 40 else "LOW"))
                 
                 st.markdown("---")
-                er1, er2 = st.columns((1.5, 2))
+                er1, er2 = st.columns(list((1.5, 2)))
                 with er1:
                     st.markdown("#### 🎯 Holistic Fault Radar")
-                    cats = ('Heat (HDF)', 'Strain (OSF)', 'Power (PWF)', 'Wear (TWF)', 'Bearing (Vib)')
-                    vals = (st.session_state.motor_faults.get('HDF',0), st.session_state.motor_faults.get('OSF',0), st.session_state.motor_faults.get('PWF',0), st.session_state.motor_faults.get('TWF',0), st.session_state.bearing_risk)
+                    cats = list(('Heat (HDF)', 'Strain (OSF)', 'Power (PWF)', 'Wear (TWF)', 'Bearing (Vib)'))
+                    vals = list((st.session_state.motor_faults.get('HDF',0), st.session_state.motor_faults.get('OSF',0), st.session_state.motor_faults.get('PWF',0), st.session_state.motor_faults.get('TWF',0), st.session_state.bearing_risk))
                     fig_r = go.Figure(data=go.Scatterpolar(r=vals, theta=cats, fill='toself', line_color='#DD4B39'))
-                    fig_r.update_layout(polar=dict(radialaxis=dict(visible=True, range=(0, 100))), showlegend=False, height=350, margin=dict(t=30, b=30))
+                    fig_r.update_layout(polar=dict(radialaxis=dict(visible=True, range=list((0, 100)))), showlegend=False, height=350, margin=dict(t=30, b=30))
                     st.plotly_chart(fig_r, use_container_width=True)
                 with er2:
                     st.markdown("#### 🛡️ System Viability Index")
-                    df_viability = pd.DataFrame({'Component': ('Motor Core', 'Bearing Assembly', 'Total System'), 'Safe %': (100.0 - st.session_state.motor_risk, 100.0 - st.session_state.bearing_risk, health_score), 'At Risk %': (st.session_state.motor_risk, st.session_state.bearing_risk, integrated_risk)})
-                    fig_viab = px.bar(df_viability, x="Component", y=("Safe %", "At Risk %"), color_discrete_sequence=('#2ecc71', '#e74c3c'))
+                    df_viability = pd.DataFrame({'Component': list(('Motor Core', 'Bearing Assembly', 'Total System')), 'Safe %': list((100.0 - st.session_state.motor_risk, 100.0 - st.session_state.bearing_risk, health_score)), 'At Risk %': list((st.session_state.motor_risk, st.session_state.bearing_risk, integrated_risk))})
+                    
+                    # تم حل مشكلة الـ TypeError هنا بتمرير قيم الـ y كـ List 
+                    fig_viab = px.bar(df_viability, x="Component", y=list(("Safe %", "At Risk %")), color_discrete_sequence=list(('#2ecc71', '#e74c3c')))
                     fig_viab.update_layout(height=350, barmode='stack', margin=dict(t=40, b=10))
                     st.plotly_chart(fig_viab, use_container_width=True)
                 
