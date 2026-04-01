@@ -158,9 +158,16 @@ if st.session_state['current_page'] == 'portal':
 elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        st.markdown("<br><br><h1 style='text-align: center; color: #4da6ff;'>⚡ TransformerGuard Login</h1>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
+            try:
+                st.image("logo.png", use_container_width=True)
+            except:
+                pass
+            st.markdown("<h2 style='text-align: center; color: #4da6ff;'>⚡ TransformerGuard Login</h2>", unsafe_allow_html=True)
+            
             with st.form("tx_login_form"):
                 st.warning("🔒 Restricted Access. Authorized Personnel Only.")
                 user = st.text_input("Username")
@@ -589,9 +596,16 @@ elif st.session_state['current_page'] == 'transformer':
 elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        st.markdown("<br><br><h1 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h1>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
+            try:
+                st.image("logo.png", use_container_width=True)
+            except:
+                pass
+            st.markdown("<h2 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h2>", unsafe_allow_html=True)
+            
             with st.form("motor_login_form"):
                 st.warning("🔒 Restricted Access. Authorized Personnel Only.")
                 user = st.text_input("Username")
