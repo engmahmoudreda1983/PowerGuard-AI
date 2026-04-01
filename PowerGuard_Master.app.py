@@ -166,7 +166,8 @@ elif st.session_state['current_page'] == 'transformer':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == "admin" and pwd == "DBA2026":
+                    # السحب من الـ Secrets بدلاً من الكود الثابت
+                    if user == st.secrets["APP_USERNAME"] and pwd == st.secrets["APP_PASSWORD"]:
                         st.session_state['tx_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
@@ -596,7 +597,8 @@ elif st.session_state['current_page'] == 'motor':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == "admin" and pwd == "DBA2026":
+                    # السحب من الـ Secrets بدلاً من الكود الثابت
+                    if user == st.secrets["APP_USERNAME"] and pwd == st.secrets["APP_PASSWORD"]:
                         st.session_state['motor_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
