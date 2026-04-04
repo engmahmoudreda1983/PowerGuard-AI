@@ -32,6 +32,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# جلب بيانات تسجيل الدخول من الـ Secrets (أو استخدام قيم افتراضية للحماية)
+APP_USER = st.secrets.get("admin_user", "admin")
+APP_PASS = st.secrets.get("admin_pass", "DBA2026")
+
 # ==========================================
 # 2. تحميل كل النماذج الذكية
 # ==========================================
@@ -139,6 +143,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<h3 style='text-align: center; color: #666;'>Select Diagnostic Module</h3><br><br>", unsafe_allow_html=True)
     
     col1, col2, col3, col4, col5 = st.columns(list((0.5, 2, 2, 2, 0.5)))
+    
     with col2:
         st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer Guard</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
         if st.button("Launch Transformer", use_container_width=True):
@@ -146,14 +151,14 @@ if st.session_state['current_page'] == 'portal':
             st.rerun()
             
     with col3:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #DD4B39; height: 160px;'><h3>⚙️ MotorGuard AI</h3><p>Telemetry & Vibration FMEA</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #DD4B39; height: 160px;'><h3>⚙️ Motor Guard AI</h3><p>Telemetry & Vibration FMEA</p></div>", unsafe_allow_html=True)
         if st.button("Launch Motor", use_container_width=True):
             st.session_state['current_page'] = 'motor'
             st.rerun()
             
     with col4:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #9B59B6; height: 160px;'><h3>🛡️ RelayGuard AI</h3><p>Protection Health Monitor</p></div>", unsafe_allow_html=True)
-        if st.button("Launch Relay Guard", use_container_width=True):
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #9B59B6; height: 160px;'><h3>🛡️ Relay Guard AI</h3><p>Protection Health Monitor</p></div>", unsafe_allow_html=True)
+        if st.button("Launch Relay", use_container_width=True):
             st.session_state['current_page'] = 'relay'
             st.rerun()
 
@@ -173,7 +178,7 @@ elif st.session_state['current_page'] == 'transformer':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == "admin" and pwd == "DBA2026":
+                    if user == APP_USER and pwd == APP_PASS:
                         st.session_state['tx_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
@@ -603,7 +608,7 @@ elif st.session_state['current_page'] == 'motor':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == "admin" and pwd == "DBA2026":
+                    if user == APP_USER and pwd == APP_PASS:
                         st.session_state['motor_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
@@ -826,7 +831,7 @@ elif st.session_state['current_page'] == 'motor':
                     st.dataframe(st.session_state.inspection_log.style.apply(highlight_fmea, axis=1), use_container_width=True, hide_index=True, height=250)
 
 # ==============================================================================
-# 8. أجهزة الحماية (RelayGuard AI) - الكود الجديد المُدمج بالكامل
+# 8. أجهزة الحماية (RelayGuard AI)
 # ==============================================================================
 elif st.session_state['current_page'] == 'relay':
     if not st.session_state['relay_logged_in']:
@@ -839,7 +844,8 @@ elif st.session_state['current_page'] == 'relay':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == "admin" and pwd == "DBA2026":
+                    # استخدام الـ Secrets بدلاً من الباسورد الثابت
+                    if user == APP_USER and pwd == APP_PASS:
                         st.session_state['relay_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
@@ -867,10 +873,27 @@ elif st.session_state['current_page'] == 'relay':
             st.markdown("### 📥 Telemetry Input")
             st.info("أدخل القراءات المستخرجة من أجهزة الوقاية")
             
-            noise_index = st.number_input("Pre-Fault Noise Index (Signal Fluctuations)", min_value=0.0, max_value=10.0, value=0.05, step=0.01)
-            fault_current = st.number_input("Max Fault Current Seen (Amperes)", min_value=0, max_value=100000, value=1500, step=100)
-            age_months = st.number_input("Relay Age (Months from Commissioning)", min_value=0, max_value=600, value=192, step=12)
-            alarms_count = st.number_input("Internal Alarms Count (from Logs)", min_value=0, max_value=50, value=0, step=1)
+            # إضافة علامات الاستفهام Tooltips لشرح المتغيرات
+            noise_index = st.number_input(
+                "Pre-Fault Noise Index", 
+                min_value=0.0, max_value=10.0, value=0.05, step=0.01,
+                help="مؤشر التشويش قبل العطل (Signal Fluctuations). كلما زاد الرقم فوق 1.5، دل ذلك على وجود مشكلة أو ضعف في كارت القياس (Analog Input Card)."
+            )
+            fault_current = st.number_input(
+                "Max Fault Current Seen (A)", 
+                min_value=0, max_value=100000, value=1500, step=100,
+                help="أقصى تيار قصر تعرض له الجهاز بالآمبير. التيارات العالية جداً تسبب إجهاداً ميكانيكياً (Mechanical Wear) للملامسات، خاصة في الأجهزة القديمة."
+            )
+            age_months = st.number_input(
+                "Relay Age (Months)", 
+                min_value=0, max_value=600, value=192, step=12,
+                help="عمر الجهاز بالشهور منذ تاريخ تركيبه أو تصنيعه. الأجهزة التي يتجاوز عمرها 10 سنوات (120 شهر) تدخل في مرحلة تقادم المكونات (Wear-out)."
+            )
+            alarms_count = st.number_input(
+                "Internal Alarms Count", 
+                min_value=0, max_value=50, value=0, step=1,
+                help="عدد الإنذارات الداخلية المسجلة في الـ Event Logs مثل (Fail, Error, Blocked). مؤشر قوي على مشاكل المعالج (CPU) أو الباور سبلاي."
+            )
             
             analyze_btn = st.button("🔍 Analyze Relay Health", use_container_width=True, type="primary")
 
@@ -879,10 +902,8 @@ elif st.session_state['current_page'] == 'relay':
             
             if analyze_btn:
                 try:
-                    # 1. تحميل الموديل
                     relay_model = joblib.load('Final_Relay_AI_Model.pkl')
                     
-                    # 2. تجهيز البيانات
                     input_data = pd.DataFrame({
                         'Pre_Fault_Noise_Index': [noise_index],
                         'Max_Fault_Current_A': [fault_current],
@@ -890,23 +911,21 @@ elif st.session_state['current_page'] == 'relay':
                         'Internal_Alarms_Count': [alarms_count]
                     })
                     
-                    # 3. استخراج التوقعات
-                    prediction = relay_model.predict(input_data)
-                    probabilities = relay_model.predict_proba(input_data)
+                    # --- حل مشكلة הـ TypeError ---
+                    prediction_raw = relay_model.predict(input_data)
+                    prediction_idx = int(prediction_raw) # تحويل صريح لرقم صحيح
                     
-                    # 4. حساب مؤشر الخطورة
+                    probabilities = relay_model.predict_proba(input_data)
                     safe_prob = probabilities
                     risk_score = (1 - safe_prob) * 100
                     
                     target_names = ['✅ Safe / Normal', '⚠️ Analog Card Degradation', '⚙️ Mechanical Wear', '🔌 CPU / Power Issue']
-                    predicted_mode = target_names[prediction]
+                    predicted_mode = target_names[prediction_idx] # استخدام الرقم الصحيح
                     
-                    # 5. عرض النتائج 
                     res_col1, res_col2 = st.columns(2)
                     
                     risk_color = "normal" if risk_score < 30 else "off" if risk_score < 70 else "inverse"
                     res_col1.metric(label="System Risk Score", value=f"{risk_score:.1f}%", delta="High Risk" if risk_score > 60 else "Acceptable", delta_color=risk_color)
-                    
                     res_col2.metric(label="Predicted Failure Mode", value=predicted_mode.split(' ', 1), delta=predicted_mode.split(' '))
                     
                     st.markdown("#### 📈 Failure Mode Probabilities")
@@ -937,5 +956,7 @@ elif st.session_state['current_page'] == 'relay':
                         
                 except FileNotFoundError:
                     st.error("⚠️ Model file `Final_Relay_AI_Model.pkl` not found! Please make sure it is uploaded in the same directory as this app.")
+                except Exception as e:
+                    st.error(f"⚠️ حدث خطأ غير متوقع: {str(e)}")
             else:
                 st.info("👈 Please enter the relay parameters and click 'Analyze Relay Health' to generate insights.")
