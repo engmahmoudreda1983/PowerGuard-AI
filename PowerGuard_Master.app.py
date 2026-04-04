@@ -10,9 +10,13 @@ import plotly.graph_objects as go
 import plotly.express as px
 import joblib
 from datetime import datetime
+import warnings
+
+# Suppress warnings for cleaner logs
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # ==========================================
-# 1. إعدادات الصفحة والتصميم الأساسي
+# 1. Page Configuration & Custom Styling
 # ==========================================
 st.set_page_config(page_title="PowerGuard AI Enterprise", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
@@ -32,12 +36,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# جلب بيانات تسجيل الدخول من الـ Secrets (أو استخدام قيم افتراضية للحماية)
-APP_USER = st.secrets.get("admin_user", "admin")
-APP_PASS = st.secrets.get("admin_pass", "DBA2026")
+# Fetch credentials STRICTLY from Streamlit Secrets
+try:
+    APP_USER = st.secrets["admin_user"]
+    APP_PASS = st.secrets["admin_pass"]
+except Exception:
+    APP_USER = "LOCKED_NO_SECRET"
+    APP_PASS = "LOCKED_NO_SECRET"
 
 # ==========================================
-# 2. تحميل كل النماذج الذكية
+# 2. Load All AI Models (Cached)
 # ==========================================
 @st.cache_resource
 def load_all_models():
@@ -62,7 +70,7 @@ def load_all_models():
 model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, models_ready = load_all_models()
 
 # ==========================================
-# 3. دوال مساعدة (Helper Functions)
+# 3. Helper Functions
 # ==========================================
 def get_tx_confidence(model, input_df):
     try:
@@ -113,7 +121,7 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     return fig
 
 # ==========================================
-# 4. إعداد متغيرات الجلسة (Session State)
+# 4. Session State Initialization
 # ==========================================
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'portal'
 if 'tx_logged_in' not in st.session_state: st.session_state['tx_logged_in'] = False
@@ -136,7 +144,7 @@ def go_to_portal():
     st.rerun()
 
 # ==========================================
-# 5. البوابة الرئيسية (Portal)
+# 5. Enterprise Portal (Main Menu)
 # ==========================================
 if st.session_state['current_page'] == 'portal':
     st.markdown("<br><br><h1 style='text-align: center; color: #0b2e59;'>⚡ PowerGuard AI Enterprise Portal</h1>", unsafe_allow_html=True)
@@ -165,7 +173,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 6. المحولات (Transformer Guard)
+# 6. Transformer Guard Module
 # ==============================================================================
 elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
@@ -204,7 +212,7 @@ elif st.session_state['current_page'] == 'transformer':
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs(list(("🧪 DGA & Quality", "🌡️ THERMAL LOAD", "📁 Batch", "📑 RISK Logs", "📄 AI Report")))
 
-        # --- TAB 1 (Real-Time Auto Update) ---
+        # --- TAB 1: DGA Quality ---
         with tab1:
             col_in, col_out = st.columns(list((1, 2.2)))
             with col_in:
@@ -296,7 +304,7 @@ elif st.session_state['current_page'] == 'transformer':
                 fig_imp.update_layout(height=350, coloraxis_showscale=False)
                 st.plotly_chart(fig_imp, use_container_width=True)
 
-        # --- TAB 2 (Real-Time Auto Update) ---
+        # --- TAB 2: Thermal Load ---
         with tab2:
             st.markdown("### 🌡️ Thermal Load Predictive Analysis")
             col_t_in, col_t_out = st.columns(list((1, 1.5)))
@@ -361,7 +369,7 @@ elif st.session_state['current_page'] == 'transformer':
                 fig_t_imp.update_layout(height=300, coloraxis_showscale=False)
                 st.plotly_chart(fig_t_imp, use_container_width=True)
 
-        # --- TAB 3: BATCH ---
+        # --- TAB 3: Batch Hist ---
         with tab3:
             st.markdown("### 📁 Batch Historical Analysis")
             analysis_type = st.radio("Select Analysis Type:", list(("🧪 DGA (Health Index)", "🌡️ SCADA (Oil Temp)")))
@@ -595,7 +603,7 @@ elif st.session_state['current_page'] == 'transformer':
                     for iss in issues_thermal: st.markdown(f"- {iss}")
 
 # ==============================================================================
-# 7. المحركات (MotorGuard AI)
+# 7. Motor Guard Module
 # ==============================================================================
 elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
@@ -831,7 +839,7 @@ elif st.session_state['current_page'] == 'motor':
                     st.dataframe(st.session_state.inspection_log.style.apply(highlight_fmea, axis=1), use_container_width=True, hide_index=True, height=250)
 
 # ==============================================================================
-# 8. أجهزة الحماية (RelayGuard AI)
+# 8. Relay Guard Module (New Integrated AI)
 # ==============================================================================
 elif st.session_state['current_page'] == 'relay':
     if not st.session_state['relay_logged_in']:
@@ -844,7 +852,7 @@ elif st.session_state['current_page'] == 'relay':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    # استخدام الـ Secrets بدلاً من الباسورد الثابت
+                    # Using dynamic secrets (No hardcoded credentials)
                     if user == APP_USER and pwd == APP_PASS:
                         st.session_state['relay_logged_in'] = True
                         st.rerun()
@@ -871,28 +879,28 @@ elif st.session_state['current_page'] == 'relay':
 
         with col1:
             st.markdown("### 📥 Telemetry Input")
-            st.info("أدخل القراءات المستخرجة من أجهزة الوقاية")
+            st.info("Enter the extracted telemetry from the protection relays.")
             
-            # إضافة علامات الاستفهام Tooltips لشرح المتغيرات
+            # Tooltips translated to English to maintain professional standard
             noise_index = st.number_input(
                 "Pre-Fault Noise Index", 
                 min_value=0.0, max_value=10.0, value=0.05, step=0.01,
-                help="مؤشر التشويش قبل العطل (Signal Fluctuations). كلما زاد الرقم فوق 1.5، دل ذلك على وجود مشكلة أو ضعف في كارت القياس (Analog Input Card)."
+                help="Signal Fluctuations before fault. Values above 1.5 strongly indicate potential Analog Input Card degradation."
             )
             fault_current = st.number_input(
                 "Max Fault Current Seen (A)", 
                 min_value=0, max_value=100000, value=1500, step=100,
-                help="أقصى تيار قصر تعرض له الجهاز بالآمبير. التيارات العالية جداً تسبب إجهاداً ميكانيكياً (Mechanical Wear) للملامسات، خاصة في الأجهزة القديمة."
+                help="Maximum fault current seen in Amperes. Extremely high currents cause mechanical wear on contacts, especially in aging devices."
             )
             age_months = st.number_input(
                 "Relay Age (Months)", 
                 min_value=0, max_value=600, value=192, step=12,
-                help="عمر الجهاز بالشهور منذ تاريخ تركيبه أو تصنيعه. الأجهزة التي يتجاوز عمرها 10 سنوات (120 شهر) تدخل في مرحلة تقادم المكونات (Wear-out)."
+                help="Relay age in months since commissioning. Relays over 10 years (120 months) enter the wear-out phase."
             )
             alarms_count = st.number_input(
                 "Internal Alarms Count", 
                 min_value=0, max_value=50, value=0, step=1,
-                help="عدد الإنذارات الداخلية المسجلة في الـ Event Logs مثل (Fail, Error, Blocked). مؤشر قوي على مشاكل المعالج (CPU) أو الباور سبلاي."
+                help="Number of internal alarms recorded in Event Logs (e.g., Fail, Error). Strong indicator of CPU or Power Supply issues."
             )
             
             analyze_btn = st.button("🔍 Analyze Relay Health", use_container_width=True, type="primary")
@@ -911,16 +919,16 @@ elif st.session_state['current_page'] == 'relay':
                         'Internal_Alarms_Count': [alarms_count]
                     })
                     
-                    # --- حل مشكلة הـ TypeError ---
+                    # --- Fixing the TypeError: Force extract integer scalar ---
                     prediction_raw = relay_model.predict(input_data)
-                    prediction_idx = int(prediction_raw) # تحويل صريح لرقم صحيح
+                    prediction_idx = int(np.squeeze(prediction_raw))
                     
                     probabilities = relay_model.predict_proba(input_data)
                     safe_prob = probabilities
                     risk_score = (1 - safe_prob) * 100
                     
                     target_names = ['✅ Safe / Normal', '⚠️ Analog Card Degradation', '⚙️ Mechanical Wear', '🔌 CPU / Power Issue']
-                    predicted_mode = target_names[prediction_idx] # استخدام الرقم الصحيح
+                    predicted_mode = target_names[prediction_idx]
                     
                     res_col1, res_col2 = st.columns(2)
                     
@@ -957,6 +965,6 @@ elif st.session_state['current_page'] == 'relay':
                 except FileNotFoundError:
                     st.error("⚠️ Model file `Final_Relay_AI_Model.pkl` not found! Please make sure it is uploaded in the same directory as this app.")
                 except Exception as e:
-                    st.error(f"⚠️ حدث خطأ غير متوقع: {str(e)}")
+                    st.error(f"⚠️ Unexpected Error: {str(e)}")
             else:
                 st.info("👈 Please enter the relay parameters and click 'Analyze Relay Health' to generate insights.")
