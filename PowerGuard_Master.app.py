@@ -10,13 +10,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 import joblib
 from datetime import datetime
-import warnings
-
-# Suppress warnings for cleaner logs
-warnings.filterwarnings("ignore", category=UserWarning)
 
 # ==========================================
-# 1. Page Configuration & Custom Styling
+# 1. إعدادات الصفحة والتصميم الأساسي
 # ==========================================
 st.set_page_config(page_title="PowerGuard AI Enterprise", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
@@ -36,16 +32,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Fetch credentials STRICTLY from Streamlit Secrets
-try:
-    APP_USER = st.secrets["admin_user"]
-    APP_PASS = st.secrets["admin_pass"]
-except Exception:
-    APP_USER = "LOCKED_NO_SECRET"
-    APP_PASS = "LOCKED_NO_SECRET"
-
 # ==========================================
-# 2. Load All AI Models (Cached)
+# 2. تحميل كل النماذج الذكية
 # ==========================================
 @st.cache_resource
 def load_all_models():
@@ -70,7 +58,7 @@ def load_all_models():
 model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, models_ready = load_all_models()
 
 # ==========================================
-# 3. Helper Functions
+# 3. دوال مساعدة (Helper Functions)
 # ==========================================
 def get_tx_confidence(model, input_df):
     try:
@@ -121,12 +109,11 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     return fig
 
 # ==========================================
-# 4. Session State Initialization
+# 4. إعداد متغيرات الجلسة (Session State)
 # ==========================================
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'portal'
 if 'tx_logged_in' not in st.session_state: st.session_state['tx_logged_in'] = False
 if 'motor_logged_in' not in st.session_state: st.session_state['motor_logged_in'] = False
-if 'relay_logged_in' not in st.session_state: st.session_state['relay_logged_in'] = False
 
 if 'fmea_log' not in st.session_state: 
     st.session_state['fmea_log'] = pd.DataFrame(columns=list(('Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required')))
@@ -144,36 +131,29 @@ def go_to_portal():
     st.rerun()
 
 # ==========================================
-# 5. Enterprise Portal (Main Menu)
+# 5. البوابة الرئيسية (Portal)
 # ==========================================
 if st.session_state['current_page'] == 'portal':
     st.markdown("<br><br><h1 style='text-align: center; color: #0b2e59;'>⚡ PowerGuard AI Enterprise Portal</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #666;'>Select Diagnostic Module</h3><br><br>", unsafe_allow_html=True)
     
-    col1, col2, col3, col4, col5 = st.columns(list((0.5, 2, 2, 2, 0.5)))
-    
+    col1, col2, col3, col4 = st.columns(list((1, 2, 2, 1)))
     with col2:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer Guard</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
-        if st.button("Launch Transformer", use_container_width=True):
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer & Reactor</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
+        if st.button("Launch Transformer Guard", use_container_width=True):
             st.session_state['current_page'] = 'transformer'
             st.rerun()
             
     with col3:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #DD4B39; height: 160px;'><h3>⚙️ Motor Guard AI</h3><p>Telemetry & Vibration FMEA</p></div>", unsafe_allow_html=True)
-        if st.button("Launch Motor", use_container_width=True):
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #DD4B39; height: 160px;'><h3>⚙️ MotorGuard AI</h3><p>Telemetry & Vibration FMEA</p></div>", unsafe_allow_html=True)
+        if st.button("Launch Motor Guard", use_container_width=True):
             st.session_state['current_page'] = 'motor'
-            st.rerun()
-            
-    with col4:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #9B59B6; height: 160px;'><h3>🛡️ Relay Guard AI</h3><p>Protection Health Monitor</p></div>", unsafe_allow_html=True)
-        if st.button("Launch Relay", use_container_width=True):
-            st.session_state['current_page'] = 'relay'
             st.rerun()
 
     st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 6. Transformer Guard Module
+# 6. المحولات (Transformer Guard)
 # ==============================================================================
 elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
@@ -186,7 +166,8 @@ elif st.session_state['current_page'] == 'transformer':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == APP_USER and pwd == APP_PASS:
+                    # السحب من الـ Secrets بدلاً من الكود الثابت
+                    if user == st.secrets["APP_USERNAME"] and pwd == st.secrets["APP_PASSWORD"]:
                         st.session_state['tx_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
@@ -212,25 +193,25 @@ elif st.session_state['current_page'] == 'transformer':
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs(list(("🧪 DGA & Quality", "🌡️ THERMAL LOAD", "📁 Batch", "📑 RISK Logs", "📄 AI Report")))
 
-        # --- TAB 1: DGA Quality ---
+        # --- TAB 1 (Real-Time Auto Update) ---
         with tab1:
             col_in, col_out = st.columns(list((1, 2.2)))
             with col_in:
                 st.markdown("### 📊 DGA Parameters")
-                h2 = st.number_input("Hydrogen (H2)", value=5.0)
-                o2 = st.number_input("Oxygen (O2)", value=500.0)
-                n2 = st.number_input("Nitrogen (N2)", value=10000.0)
-                ch4 = st.number_input("Methane (CH4)", value=2.0)
-                co = st.number_input("Carbon Monoxide (CO)", value=100.0)
-                co2 = st.number_input("Carbon Dioxide (CO2)", value=300.0)
-                c2h4 = st.number_input("Ethylene (C2H4)", value=1.0)
-                c2h6 = st.number_input("Ethane (C2H6)", value=5.0)
-                c2h2 = st.number_input("Acetylene (C2H2)", value=0.0)
-                dbds = st.number_input("DBDS (ppm)", value=0.1)
-                pf = st.number_input("Power Factor (%)", value=0.05)
-                ift = st.number_input("Interfacial Tension", min_value=0.0, max_value=75.0, value=45.0)
-                dr = st.number_input("Dielectric Rigidity (kV)", value=70.0)
-                wc = st.number_input("Water Content (ppm)", value=2.0)
+                h2 = st.number_input("Hydrogen (H2)", value=5.0, help="Indicates partial discharge, electrolysis, or low-energy electrical faults.")
+                o2 = st.number_input("Oxygen (O2)", value=500.0, help="Indicates oxidation or air leak in the sealing system.")
+                n2 = st.number_input("Nitrogen (N2)", value=10000.0, help="Usually from atmosphere or inert gas blanket.")
+                ch4 = st.number_input("Methane (CH4)", value=2.0, help="Associated with low-temperature thermal faults in oil (<300°C).")
+                co = st.number_input("Carbon Monoxide (CO)", value=100.0, help="Key indicator of degradation of cellulose (paper) solid insulation.")
+                co2 = st.number_input("Carbon Dioxide (CO2)", value=300.0, help="Product of paper insulation aging and thermal degradation.")
+                c2h4 = st.number_input("Ethylene (C2H4)", value=1.0, help="Associated with high-temperature thermal faults in oil (>700°C).")
+                c2h6 = st.number_input("Ethane (C2H6)", value=5.0, help="Associated with medium-temperature thermal faults.")
+                c2h2 = st.number_input("Acetylene (C2H2)", value=0.0, help="Critical Alert: Indicates high-energy arcing or severe electrical sparking.")
+                dbds = st.number_input("DBDS (ppm)", value=0.1, help="Corrosive sulfur compound that can cause copper winding failure.")
+                pf = st.number_input("Power Factor (%)", value=0.05, help="Measures dielectric losses; higher values indicate degraded or contaminated oil.")
+                ift = st.number_input("Interfacial Tension", min_value=0.0, max_value=75.0, value=45.0, help="Lower values indicate presence of polar contaminants and oil oxidation.")
+                dr = st.number_input("Dielectric Rigidity (kV)", value=70.0, help="Breakdown voltage; measures the ability of oil to withstand electrical stress.")
+                wc = st.number_input("Water Content (ppm)", value=2.0, help="Moisture level; highly detrimental to paper insulation life and dielectric strength.")
 
             with col_out:
                 input_df = pd.DataFrame(list(((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc),)), 
@@ -304,21 +285,21 @@ elif st.session_state['current_page'] == 'transformer':
                 fig_imp.update_layout(height=350, coloraxis_showscale=False)
                 st.plotly_chart(fig_imp, use_container_width=True)
 
-        # --- TAB 2: Thermal Load ---
+        # --- TAB 2 (Real-Time Auto Update) ---
         with tab2:
             st.markdown("### 🌡️ Thermal Load Predictive Analysis")
             col_t_in, col_t_out = st.columns(list((1, 1.5)))
             with col_t_in:
-                capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0)
+                capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0, help="Nameplate capacity of the transformer.")
                 c1, c2 = st.columns(2)
-                hour = c1.number_input("Hour (0-23)", min_value=0, max_value=23, value=14)
-                month = c2.number_input("Month (1-12)", min_value=1, max_value=12, value=7)
-                hufl = st.number_input("HUFL", value=12.5)
-                hull = st.number_input("HULL", value=3.2)
-                mufl = st.number_input("MUFL", value=8.1)
-                mull = st.number_input("MULL", value=1.5)
-                lufl = st.number_input("LUFL", value=4.5)
-                lull = st.number_input("LULL", value=0.8)
+                hour = c1.number_input("Hour (0-23)", min_value=0, max_value=23, value=14, help="Time of day, influences ambient load and temperature.")
+                month = c2.number_input("Month (1-12)", min_value=1, max_value=12, value=7, help="Month of the year, influences seasonal ambient temperature.")
+                hufl = st.number_input("HUFL", value=12.5, help="High Use Full Load - Represents peak load behavior from SCADA.")
+                hull = st.number_input("HULL", value=3.2, help="High Use Low Load")
+                mufl = st.number_input("MUFL", value=8.1, help="Medium Use Full Load")
+                mull = st.number_input("MULL", value=1.5, help="Medium Use Low Load")
+                lufl = st.number_input("LUFL", value=4.5, help="Low Use Full Load")
+                lull = st.number_input("LULL", value=0.8, help="Low Use Low Load")
                     
             with col_t_out:
                 total_active_load = hufl + mufl + lufl
@@ -369,7 +350,7 @@ elif st.session_state['current_page'] == 'transformer':
                 fig_t_imp.update_layout(height=300, coloraxis_showscale=False)
                 st.plotly_chart(fig_t_imp, use_container_width=True)
 
-        # --- TAB 3: Batch Hist ---
+        # --- TAB 3: BATCH ---
         with tab3:
             st.markdown("### 📁 Batch Historical Analysis")
             analysis_type = st.radio("Select Analysis Type:", list(("🧪 DGA (Health Index)", "🌡️ SCADA (Oil Temp)")))
@@ -396,18 +377,18 @@ elif st.session_state['current_page'] == 'transformer':
                     c_id1, c_id2 = st.columns(2)
                     tx_list = list((f"T{i:02d} (Substation Unit)" for i in range(1, 11)))
                     asset_selection = c_id1.selectbox("Select Asset:", tx_list)
-                    e_capacity = c_id2.number_input("Rated Capacity", min_value=10.0, value=50.0)
+                    e_capacity = c_id2.number_input("Rated Capacity", min_value=10.0, value=50.0, help="Nameplate capacity of the transformer.")
                     
-                    e_h2 = st.number_input("H2", value=5.0)
-                    e_ch4 = st.number_input("CH4", value=2.0)
-                    e_co = st.number_input("CO", value=100.0)
-                    e_co2 = st.number_input("CO2", value=300.0)
-                    e_c2h4 = st.number_input("C2H4", value=1.0)
-                    e_c2h2 = st.number_input("C2H2", value=0.0)
-                    e_dr = st.number_input("DR (kV)", value=70.0)
-                    e_wc = st.number_input("Water (ppm)", value=2.0)
-                    e_pf = st.number_input("Power Factor", value=0.05)
-                    e_ift = st.number_input("IFT", value=45.0)
+                    e_h2 = st.number_input("H2", value=5.0, help="Indicates partial discharge.")
+                    e_ch4 = st.number_input("CH4", value=2.0, help="Thermal faults <300°C.")
+                    e_co = st.number_input("CO", value=100.0, help="Paper insulation degradation.")
+                    e_co2 = st.number_input("CO2", value=300.0, help="Paper insulation aging.")
+                    e_c2h4 = st.number_input("C2H4", value=1.0, help="Thermal faults >700°C.")
+                    e_c2h2 = st.number_input("C2H2", value=0.0, help="High-energy arcing.")
+                    e_dr = st.number_input("DR (kV)", value=70.0, help="Dielectric Rigidity.")
+                    e_wc = st.number_input("Water (ppm)", value=2.0, help="Moisture content.")
+                    e_pf = st.number_input("Power Factor", value=0.05, help="Dielectric losses.")
+                    e_ift = st.number_input("IFT", value=45.0, help="Interfacial Tension.")
                     
                     c_o1, c_o2, c_o3 = st.columns(3)
                     e_hufl = c_o1.number_input("Total Load", value=12.0)
@@ -491,7 +472,7 @@ elif st.session_state['current_page'] == 'transformer':
                 try: st.dataframe(st.session_state['fmea_log'].style.map(color_risk, subset=['Status']), use_container_width=True)
                 except: st.dataframe(st.session_state['fmea_log'].style.applymap(color_risk, subset=['Status']), use_container_width=True)
 
-        # --- TAB 5: AI REPORT ---
+        # --- TAB 5: AI REPORT (RESTORED FULL VERSION) ---
         with tab5:
             if st.session_state.get('latest_eval') is None: 
                 st.markdown("<br><br><h3 style='text-align: center; color: #888;'>💡 Please generate a risk assessment from TAB 4 first.</h3>", unsafe_allow_html=True)
@@ -603,7 +584,7 @@ elif st.session_state['current_page'] == 'transformer':
                     for iss in issues_thermal: st.markdown(f"- {iss}")
 
 # ==============================================================================
-# 7. Motor Guard Module
+# 7. المحركات (MotorGuard AI)
 # ==============================================================================
 elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
@@ -616,7 +597,8 @@ elif st.session_state['current_page'] == 'motor':
                 user = st.text_input("Username")
                 pwd = st.text_input("Password", type="password")
                 if st.form_submit_button("Secure Login", use_container_width=True):
-                    if user == APP_USER and pwd == APP_PASS:
+                    # السحب من الـ Secrets بدلاً من الكود الثابت
+                    if user == st.secrets["APP_USERNAME"] and pwd == st.secrets["APP_PASSWORD"]:
                         st.session_state['motor_logged_in'] = True
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
@@ -649,16 +631,16 @@ elif st.session_state['current_page'] == 'motor':
                 with c_in:
                     st.markdown("#### 🎛️ Live Sensor Telemetry")
                     motor_options = {'L (Low - Standard Build)': 0, 'M (Medium - Commercial)': 1, 'H (High - Industrial Grade)': 2}
-                    motor_type = st.selectbox("Motor Quality Grade ❓", list(motor_options.keys()), index=1)
+                    motor_type = st.selectbox("Motor Quality Grade", list(motor_options.keys()), index=1, help="Higher build quality resists overstrain and thermal faults better.")
                     st.markdown("---")
                     st.markdown("#### 🌡️ Thermal Metrics")
-                    air_temp = st.number_input("Ambient Air Temp [K] ❓", min_value=290.0, max_value=310.0, value=298.0, step=0.1)
-                    process_temp = st.number_input("Motor Core Temp [K] ❓", min_value=300.0, max_value=320.0, value=308.0, step=0.1)
+                    air_temp = st.number_input("Ambient Air Temp [K]", min_value=290.0, max_value=310.0, value=298.0, step=0.1, help="Surrounding environment temperature.")
+                    process_temp = st.number_input("Motor Core Temp [K]", min_value=300.0, max_value=320.0, value=308.0, step=0.1, help="Internal operating temperature of the motor core.")
                     st.markdown("---")
                     st.markdown("#### ⚙️ Mechanical Metrics")
-                    rpm = st.slider("Rotational Speed [RPM] ❓", 1100, 2900, 1500, 10)
-                    torque = st.slider("Applied Torque [Nm] ❓", 10.0, 80.0, 40.0, 0.5)
-                    tool_wear = st.slider("Tool Wear Level [min] ❓", 0, 260, 50, 1)
+                    rpm = st.slider("Rotational Speed [RPM]", 1100, 2900, 1500, 10, help="Shaft speed. High RPM increases mechanical wear.")
+                    torque = st.slider("Applied Torque [Nm]", 10.0, 80.0, 40.0, 0.5, help="Mechanical load twist force. Causes overstrain (OSF) if combined with high wear.")
+                    tool_wear = st.slider("Tool Wear Level [min]", 0, 260, 50, 1, help="Cumulative runtime/wear of the attached load. Causes Tool Wear Failure (TWF).")
                     
                 with c_out:
                     raw_df = pd.DataFrame({'Type': list((motor_options[motor_type],)), 'Air temperature [K]': list((air_temp,)), 'Process temperature [K]': list((process_temp,)), 'Rotational speed [rpm]': list((rpm,)), 'Torque [Nm]': list((torque,)), 'Tool wear [min]': list((tool_wear,))})
@@ -739,7 +721,7 @@ elif st.session_state['current_page'] == 'motor':
                 cv1, cv2 = st.columns(list((1.5, 1)))
                 with cv1:
                     st.markdown("#### 🎚️ Simulator & Key Metrics")
-                    sim_level = st.slider("Degradation Phase (%) ❓", 0, 100, 10)
+                    sim_level = st.slider("Degradation Phase (%)", 0, 100, 10, help="Simulates the physical wear lifecycle of the bearing assembly from new (0%) to failure (100%).")
                     r_val = 0.05 + (sim_level/100.0)**2 * 0.20
                     k_val = 3.0 + (sim_level/100.0)**1.5 * 5.0
                     p2p_val = r_val * 4.5
@@ -837,134 +819,3 @@ elif st.session_state['current_page'] == 'motor':
                 st.markdown("#### 📋 Comprehensive Diagnostic Log")
                 if not st.session_state.inspection_log.empty:
                     st.dataframe(st.session_state.inspection_log.style.apply(highlight_fmea, axis=1), use_container_width=True, hide_index=True, height=250)
-
-# ==============================================================================
-# 8. Relay Guard Module (New Integrated AI)
-# ==============================================================================
-elif st.session_state['current_page'] == 'relay':
-    if not st.session_state['relay_logged_in']:
-        if st.button("⬅️ Back to Portal"): go_to_portal()
-        st.markdown("<br><br><h1 style='text-align: center; color: #9B59B6;'>🛡️ RelayGuard Login</h1>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns(list((1, 2, 1)))
-        with col2:
-            with st.form("relay_login_form"):
-                st.warning("🔒 Restricted Access. Authorized Personnel Only.")
-                user = st.text_input("Username")
-                pwd = st.text_input("Password", type="password")
-                if st.form_submit_button("Secure Login", use_container_width=True):
-                    # Using dynamic secrets (No hardcoded credentials)
-                    if user == APP_USER and pwd == APP_PASS:
-                        st.session_state['relay_logged_in'] = True
-                        st.rerun()
-                    else: st.error("❌ Invalid Credentials")
-    else:
-        col_l, col_r = st.columns(list((10, 1)))
-        with col_l:
-            if st.button("⬅️ Portal"): go_to_portal()
-        with col_r:
-            if st.button("Logout 🚪"):
-                st.session_state['relay_logged_in'] = False
-                go_to_portal()
-
-        st.markdown("""
-        <div class="main-header" style="border-left: 8px solid #9B59B6;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div><h2 style="margin:0;">🛡️ RelayGuard AI</h2><p style="margin:0; font-size: 14px; color:#CCCCCC;">Protection Relay Health Monitor & Predictive Diagnostics</p></div>
-                <div style="text-align: right;"><h4 style="margin:0; color:#00ff88;">⚡ LIVE ASSESSMENT</h4></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col1, col2 = st.columns([1, 2.5])
-
-        with col1:
-            st.markdown("### 📥 Telemetry Input")
-            st.info("Enter the extracted telemetry from the protection relays.")
-            
-            # Tooltips translated to English to maintain professional standard
-            noise_index = st.number_input(
-                "Pre-Fault Noise Index", 
-                min_value=0.0, max_value=10.0, value=0.05, step=0.01,
-                help="Signal Fluctuations before fault. Values above 1.5 strongly indicate potential Analog Input Card degradation."
-            )
-            fault_current = st.number_input(
-                "Max Fault Current Seen (A)", 
-                min_value=0, max_value=100000, value=1500, step=100,
-                help="Maximum fault current seen in Amperes. Extremely high currents cause mechanical wear on contacts, especially in aging devices."
-            )
-            age_months = st.number_input(
-                "Relay Age (Months)", 
-                min_value=0, max_value=600, value=192, step=12,
-                help="Relay age in months since commissioning. Relays over 10 years (120 months) enter the wear-out phase."
-            )
-            alarms_count = st.number_input(
-                "Internal Alarms Count", 
-                min_value=0, max_value=50, value=0, step=1,
-                help="Number of internal alarms recorded in Event Logs (e.g., Fail, Error). Strong indicator of CPU or Power Supply issues."
-            )
-            
-            analyze_btn = st.button("🔍 Analyze Relay Health", use_container_width=True, type="primary")
-
-        with col2:
-            st.markdown("### 📊 Diagnostic Results & AI Insights")
-            
-            if analyze_btn:
-                try:
-                    relay_model = joblib.load('Final_Relay_AI_Model.pkl')
-                    
-                    input_data = pd.DataFrame({
-                        'Pre_Fault_Noise_Index': [noise_index],
-                        'Max_Fault_Current_A': [fault_current],
-                        'Relay_Age_Months': [age_months],
-                        'Internal_Alarms_Count': [alarms_count]
-                    })
-                    
-                    # --- Fixing the TypeError: Force extract integer scalar ---
-                    prediction_raw = relay_model.predict(input_data)
-                    prediction_idx = int(np.squeeze(prediction_raw))
-                    
-                    probabilities = relay_model.predict_proba(input_data)
-                    safe_prob = probabilities
-                    risk_score = (1 - safe_prob) * 100
-                    
-                    target_names = ['✅ Safe / Normal', '⚠️ Analog Card Degradation', '⚙️ Mechanical Wear', '🔌 CPU / Power Issue']
-                    predicted_mode = target_names[prediction_idx]
-                    
-                    res_col1, res_col2 = st.columns(2)
-                    
-                    risk_color = "normal" if risk_score < 30 else "off" if risk_score < 70 else "inverse"
-                    res_col1.metric(label="System Risk Score", value=f"{risk_score:.1f}%", delta="High Risk" if risk_score > 60 else "Acceptable", delta_color=risk_color)
-                    res_col2.metric(label="Predicted Failure Mode", value=predicted_mode.split(' ', 1), delta=predicted_mode.split(' '))
-                    
-                    st.markdown("#### 📈 Failure Mode Probabilities")
-                    
-                    prob_df = pd.DataFrame({
-                        'Condition': ['Safe', 'Analog Card', 'Mechanical Wear', 'CPU/Power'], 
-                        'Probability (%)': probabilities * 100
-                    })
-                    
-                    fig_probs = px.bar(
-                        prob_df, 
-                        x='Probability (%)', 
-                        y='Condition', 
-                        orientation='h',
-                        color='Condition', 
-                        color_discrete_sequence=['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c']
-                    )
-                    fig_probs.update_layout(height=250, margin=dict(l=0, r=0, t=30, b=0), showlegend=False)
-                    st.plotly_chart(fig_probs, use_container_width=True)
-                    
-                    st.markdown("#### 📝 Recommended Action (DMAIC Control Phase)")
-                    if risk_score < 30:
-                        st.success("**Action:** Continue standard Time-Based Maintenance (TBM). No immediate action required.")
-                    elif risk_score < 70:
-                        st.warning(f"**Action:** Schedule Condition-Based Maintenance (CBM). Focus inspection on: **{predicted_mode.split(' ', 1)}**.")
-                    else:
-                        st.error(f"**Action:** URGENT. High probability of failure due to **{predicted_mode.split(' ', 1)}**. Recommend immediate relay replacement.")
-                        
-                except FileNotFoundError:
-                    st.error("⚠️ Model file `Final_Relay_AI_Model.pkl` not found! Please make sure it is uploaded in the same directory as this app.")
-                except Exception as e:
-                    st.error(f"⚠️ Unexpected Error: {str(e)}")
-            else:
-                st.info("👈 Please enter the relay parameters and click 'Analyze Relay Health' to generate insights.")
