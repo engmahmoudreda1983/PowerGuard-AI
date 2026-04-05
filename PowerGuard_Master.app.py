@@ -65,7 +65,7 @@ model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, model
 # ==========================================
 def get_tx_confidence(model, input_df):
     try:
-        preds = np.array([tree.predict(input_df.values).item() for tree in model.estimators_])
+        preds = np.array(tuple(tree.predict(input_df.values).item() for tree in model.estimators_))
         return max(65.0, min(99.0, 98.5 - (np.std(preds) * 2.5)))
     except: return 92.5  
 
@@ -82,11 +82,12 @@ def get_duval_diagnosis(ch4, c2h4, c2h2):
 
 def highlight_fmea(row):
     status = row.get('Status', '')
-    if 'SAFE' in status.upper() or 'Safe' in status: return ['background-color: #E8F5E9; color: #00A65A; font-weight: bold'] * len(row)
-    if 'WARN' in status.upper(): return ['background-color: #FEF9E7; color: #D35400; font-weight: bold'] * len(row)
-    if 'DANG' in status.upper() or 'ACTION' in status.upper(): return ['background-color: #FDEDEC; color: #C0392B; font-weight: bold'] * len(row)
-    return [''] * len(row)
+    if 'SAFE' in status.upper() or 'Safe' in status: return tuple(('background-color: #E8F5E9; color: #00A65A; font-weight: bold',)) * len(row)
+    if 'WARN' in status.upper(): return tuple(('background-color: #FEF9E7; color: #D35400; font-weight: bold',)) * len(row)
+    if 'DANG' in status.upper() or 'ACTION' in status.upper(): return tuple(('background-color: #FDEDEC; color: #C0392B; font-weight: bold',)) * len(row)
+    return tuple(('',)) * len(row)
 
+# -- تم استخدام tuple() بدلاً من الأقواس المربعة لتجنب أي أخطاء من المتصفح --
 def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     val = float(value)
     fig = go.Figure(go.Indicator(
@@ -94,14 +95,14 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
         number=dict(suffix="%", font=dict(size=26, color=color, family="Arial Black")),
         title=dict(text=title, font=dict(size=16, color='#333', weight='bold')),
         gauge=dict(
-            axis=dict(range=[0, max_v], tickwidth=1, tickcolor="darkblue"),
+            axis=dict(range=tuple((0, max_v)), tickwidth=1, tickcolor="darkblue"),
             bar=dict(color=color),
             bgcolor="white", borderwidth=2, bordercolor="gray",
-            steps=[
-                dict(range=, color='#E8F5E9'), 
-                dict(range=, color='#FEF9E7'), 
-                dict(range=, color='#FDEDEC')
-            ],
+            steps=tuple((
+                dict(range=tuple((0, 40)), color='#E8F5E9'), 
+                dict(range=tuple((40, 75)), color='#FEF9E7'), 
+                dict(range=tuple((75, 100)), color='#FDEDEC')
+            )),
             threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
         )))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
@@ -120,14 +121,14 @@ def create_relay_gauge(value, title, color):
         number=dict(suffix="%", font=dict(size=30, color=color)),
         title=dict(text=title, font=dict(size=18, color='#333')),
         gauge=dict(
-            axis=dict(range=, tickwidth=1),
+            axis=dict(range=tuple((0, 100)), tickwidth=1),
             bar=dict(color=color),
             bgcolor="white",
-            steps=[
-                dict(range=, color='rgba(46, 204, 113, 0.2)'),
-                dict(range=, color='rgba(241, 196, 15, 0.2)'),
-                dict(range=, color='rgba(231, 76, 60, 0.2)')
-            ],
+            steps=tuple((
+                dict(range=tuple((0, 30)), color='rgba(46, 204, 113, 0.2)'),
+                dict(range=tuple((30, 70)), color='rgba(241, 196, 15, 0.2)'),
+                dict(range=tuple((70, 100)), color='rgba(231, 76, 60, 0.2)')
+            )),
             threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=float(value))
         )
     ))
@@ -136,9 +137,9 @@ def create_relay_gauge(value, title, color):
 
 def create_relay_radar(probs_list, classes_tup, color):
     fig = go.Figure(data=go.Scatterpolar(
-        r=[p * 100 for p in probs_list], theta=classes_tup, fill='toself', line_color=color, opacity=0.6
+        r=tuple((p * 100 for p in probs_list)), theta=classes_tup, fill='toself', line_color=color, opacity=0.6
     ))
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=)), showlegend=False, height=350, margin=dict(l=30, r=30, t=30, b=30))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=tuple((0, 100)))), showlegend=False, height=350, margin=dict(l=30, r=30, t=30, b=30))
     return fig
 
 # ==========================================
@@ -146,24 +147,20 @@ def create_relay_radar(probs_list, classes_tup, color):
 # ==========================================
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'portal'
 
-# Transformer State
 if 'tx_logged_in' not in st.session_state: st.session_state['tx_logged_in'] = False
-if 'fmea_log' not in st.session_state: st.session_state['fmea_log'] = pd.DataFrame(columns=['Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required'])
+if 'fmea_log' not in st.session_state: st.session_state['fmea_log'] = pd.DataFrame(columns=tuple(('Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required')))
 if 'latest_eval' not in st.session_state: st.session_state['latest_eval'] = None
 
-# Motor State
 if 'motor_logged_in' not in st.session_state: st.session_state['motor_logged_in'] = False
 if 'motor_risk' not in st.session_state: st.session_state.motor_risk = 0.0
 if 'bearing_risk' not in st.session_state: st.session_state.bearing_risk = 0.0
 if 'motor_faults' not in st.session_state: st.session_state.motor_faults = {'HDF': 0.0, 'OSF': 0.0, 'PWF': 0.0, 'TWF': 0.0}
-if 'inspection_log' not in st.session_state: st.session_state['inspection_log'] = pd.DataFrame(columns=['Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt'])
+if 'inspection_log' not in st.session_state: st.session_state['inspection_log'] = pd.DataFrame(columns=tuple(('Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt')))
 
-# Relay State
 if 'relay_logged_in' not in st.session_state: st.session_state['relay_logged_in'] = False
-if 'relay_fmea_log' not in st.session_state: st.session_state['relay_fmea_log'] = pd.DataFrame(columns=['Timestamp', 'Asset ID', 'Noise Index', 'Max Current (A)', 'Risk (%)', 'RPN', 'Status', 'Action'])
+if 'relay_fmea_log' not in st.session_state: st.session_state['relay_fmea_log'] = pd.DataFrame(columns=tuple(('Timestamp', 'Asset ID', 'Noise Index', 'Max Current (A)', 'Risk (%)', 'RPN', 'Status', 'Action')))
 if 'relay_latest_eval' not in st.session_state: st.session_state['relay_latest_eval'] = None
 
-# Master State
 if 'master_logged_in' not in st.session_state: st.session_state['master_logged_in'] = False
 
 def go_to_portal():
@@ -177,7 +174,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<br><h1 style='text-align: center; color: #0b2e59; font-size: 3rem;'>⚡ PowerGuard AI</h1>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #666; margin-bottom: 40px;'>Enterprise Asset Performance Management System</h4>", unsafe_allow_html=True)
     
-    col_m1, col_m2, col_m3 = st.columns()
+    col_m1, col_m2, col_m3 = st.columns(tuple((1, 2, 1)))
     with col_m2:
         st.markdown("""
         <div style='background: linear-gradient(135deg, #1E1E1E 0%, #3a3a3a 100%); padding: 30px; border-radius: 12px; text-align: center; border-bottom: 5px solid #00ff88; box-shadow: 0 8px 16px rgba(0,0,0,0.2);'>
@@ -219,7 +216,7 @@ elif st.session_state['current_page'] == 'transformer':
         if st.button("⬅️ Back to Portal"): go_to_portal()
         
         st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns(tuple((1, 2, 1)))
         with col2:
             st.markdown("<h2 style='text-align: center; color: #4da6ff;'>⚡ TransformerGuard Login</h2>", unsafe_allow_html=True)
             with st.form("tx_login_form"):
@@ -231,7 +228,7 @@ elif st.session_state['current_page'] == 'transformer':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns(tuple((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -245,10 +242,10 @@ elif st.session_state['current_page'] == 'transformer':
             st.error("⚠️ Model files not detected!")
             st.stop()
 
-        tab1, tab2, tab3, tab4 = st.tabs(["🧪 DGA Analytics", "🌡️ Thermal Load", "📑 RISK Logs", "📄 Executive Report"])
+        tab1, tab2, tab3, tab4 = st.tabs(tuple(("🧪 DGA Analytics", "🌡️ Thermal Load", "📑 RISK Logs", "📄 Executive Report")))
 
         with tab1:
-            col_in, col_out = st.columns([1, 2.2])
+            col_in, col_out = st.columns(tuple((1, 2.2)))
             with col_in:
                 st.markdown("### 📊 DGA Parameters")
                 h2 = st.number_input("Hydrogen (H2)", value=5.0)
@@ -267,10 +264,10 @@ elif st.session_state['current_page'] == 'transformer':
                 wc = st.number_input("Water Content", value=2.0)
 
             with col_out:
-                input_df = pd.DataFrame([[h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc]], columns=['Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content'])
+                input_df = pd.DataFrame(tuple((tuple((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc)),)), columns=tuple(('Hydrogen', 'Oxigen', 'Nitrogen', 'Methane', 'CO', 'CO2', 'Ethylene', 'Ethane', 'Acethylene', 'DBDS', 'Power factor', 'Interfacial V', 'Dielectric rigidity', 'Water content')))
                 
                 h_score = float(model_health.predict(input_df).item())
-                cf = sum([1.0 if dr<35 else 0, 1.0 if ift<20 else 0, 1.5 if wc>25 else 0, 1.5 if co>500 else 0, 1.0 if pf>1.5 else 0, 2.0 if c2h2>10 else 0])
+                cf = sum(tuple((1.0 if dr<35 else 0, 1.0 if ift<20 else 0, 1.5 if wc>25 else 0, 1.5 if co>500 else 0, 1.0 if pf>1.5 else 0, 2.0 if c2h2>10 else 0)))
                 if cf > 0: h_score = min(100.0, h_score + (cf * 8.0))
                 
                 status = "SAFE" if h_score <= 30 else ("WARNING" if h_score <= 45 else "RISKY")
@@ -285,13 +282,13 @@ elif st.session_state['current_page'] == 'transformer':
                     mode="gauge+number", 
                     value=float(h_score),
                     gauge=dict(
-                        axis=dict(range=, tickwidth=2, tickcolor="black"),
+                        axis=dict(range=tuple((0, 100)), tickwidth=2, tickcolor="black"),
                         bar=dict(color="black"),
-                        steps=[
-                            dict(range=, color="#00cc66"),
-                            dict(range=, color="#ffcc00"),
-                            dict(range=, color="#ff3333")
-                        ]
+                        steps=tuple((
+                            dict(range=tuple((0, 30)), color="#00cc66"),
+                            dict(range=tuple((30, 45)), color="#ffcc00"),
+                            dict(range=tuple((45, 100)), color="#ff3333")
+                        ))
                     )
                 ))
                 fig_g.update_layout(height=280, margin=dict(t=30, b=10))
@@ -302,7 +299,7 @@ elif st.session_state['current_page'] == 'transformer':
 
         with tab2:
             st.markdown("### 🌡️ Thermal Load Analysis")
-            col_t_in, col_t_out = st.columns([1, 1.5])
+            col_t_in, col_t_out = st.columns(tuple((1, 1.5)))
             with col_t_in:
                 capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0)
                 hour = st.number_input("Hour (0-23)", value=14)
@@ -316,20 +313,20 @@ elif st.session_state['current_page'] == 'transformer':
                     
             with col_t_out:
                 n_ratio = 50.0 / capacity_kva
-                t_input_norm = pd.DataFrame([[hufl*n_ratio, hull*n_ratio, mufl*n_ratio, mull*n_ratio, lufl*n_ratio, lull*n_ratio, hour, month]], columns=['HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'])
+                t_input_norm = pd.DataFrame(tuple((tuple((hufl*n_ratio, hull*n_ratio, mufl*n_ratio, mull*n_ratio, lufl*n_ratio, lull*n_ratio, hour, month)),)), columns=tuple(('HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month')))
                 pred_ot = float(model_thermal.predict(t_input_norm).item())
                 
                 fig_t = go.Figure(go.Indicator(
                     mode="gauge+number", 
                     value=float(pred_ot),
                     gauge=dict(
-                        axis=dict(range=),
+                        axis=dict(range=tuple((20, 150))),
                         bar=dict(color="black"),
-                        steps=[
-                            dict(range=, color="rgba(0, 204, 102, 0.4)"),
-                            dict(range=, color="rgba(255, 204, 0, 0.4)"),
-                            dict(range=, color="rgba(255, 51, 51, 0.4)")
-                        ]
+                        steps=tuple((
+                            dict(range=tuple((20, 60)), color="rgba(0, 204, 102, 0.4)"),
+                            dict(range=tuple((60, 80)), color="rgba(255, 204, 0, 0.4)"),
+                            dict(range=tuple((80, 150)), color="rgba(255, 51, 51, 0.4)")
+                        ))
                     )
                 ))
                 fig_t.update_layout(height=350, margin=dict(t=30, b=10))
@@ -337,7 +334,7 @@ elif st.session_state['current_page'] == 'transformer':
 
         with tab3:
             st.markdown("### 📑 Overall Transformer Risk Assessment")
-            col_ex_in, col_ex_out = st.columns([1, 1.5])
+            col_ex_in, col_ex_out = st.columns(tuple((1, 1.5)))
             with col_ex_in:
                 with st.form("tx_exec_form"):
                     asset_id = st.text_input("Asset ID", value="TX-01")
@@ -354,8 +351,10 @@ elif st.session_state['current_page'] == 'transformer':
                     else: f_status, f_color, action = "🔴 DANGER", "#ff3333", "URGENT: Isolate asset."
                     
                     st.session_state['latest_eval'] = {'asset_id': asset_id, 'overall_risk': overall_risk, 'status': f_status, 'action': action, 'color': f_color, 'duval': get_duval_diagnosis(ch4, c2h4, c2h2)}
-                    new_entry = pd.DataFrame([{'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(h_score, 1), 'Pred Temp': round(pred_ot, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': f_status, 'RPN Level': "Calc", 'Action Required': action}])
-                    st.session_state['fmea_log'] = pd.concat([st.session_state['fmea_log'], new_entry], ignore_index=True).tail(100)
+                    new_entry = pd.DataFrame(tuple((dict(Timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), Asset_ID=asset_id, DGA_Index=round(h_score, 1), Pred_Temp=round(pred_ot, 1), Overall_Risk=round(overall_risk, 1), Status=f_status, RPN_Level="Calc", Action_Required=action),)))
+                    
+                    new_entry.columns = tuple(('Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required'))
+                    st.session_state['fmea_log'] = pd.concat((st.session_state['fmea_log'], new_entry), ignore_index=True).tail(100)
                     
                     st.markdown(f"<h2 style='text-align: center; color: {f_color};'>{f_status} - Risk: {overall_risk:.1f}%</h2>", unsafe_allow_html=True)
             
@@ -372,7 +371,7 @@ elif st.session_state['current_page'] == 'transformer':
 elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns(tuple((1, 2, 1)))
         with col2:
             st.markdown("<br><h2 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h2>", unsafe_allow_html=True)
             with st.form("motor_login_form"):
@@ -384,7 +383,7 @@ elif st.session_state['current_page'] == 'motor':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns(tuple((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -394,12 +393,12 @@ elif st.session_state['current_page'] == 'motor':
 
         st.markdown("<div class='main-header'><h2 style='margin:0;'>⚙️ MotorGuard AI</h2></div>", unsafe_allow_html=True)
 
-        tab1, tab2, tab3 = st.tabs(["⚙️ Diagnostics", "📳 Vibration", "🔗 Master Fusion"])
+        tab1, tab2, tab3 = st.tabs(tuple(("⚙️ Diagnostics", "📳 Vibration", "🔗 Master Fusion")))
 
         with tab1:
-            c_in, c_out = st.columns([1, 2.5])
+            c_in, c_out = st.columns(tuple((1, 2.5)))
             with c_in:
-                motor_type = st.selectbox("Motor Grade", ['L', 'M', 'H'], index=1)
+                motor_type = st.selectbox("Motor Grade", tuple(('L', 'M', 'H')), index=1)
                 air_temp = st.number_input("Air Temp [K]", value=298.0)
                 process_temp = st.number_input("Core Temp [K]", value=308.0)
                 rpm = st.slider("RPM", 1100, 2900, 1500)
@@ -408,10 +407,10 @@ elif st.session_state['current_page'] == 'motor':
                 
             with c_out:
                 type_map = {'L':0, 'M':1, 'H':2}
-                raw_df = pd.DataFrame({'Type': [type_map[motor_type]], 'Air temperature [K]': [air_temp], 'Process temperature [K]': [process_temp], 'Rotational speed [rpm]': [rpm], 'Torque [Nm]': [torque], 'Tool wear [min]': [tool_wear]})
-                cols_to_scale = ['Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]']
+                raw_df = pd.DataFrame({'Type': tuple((type_map[motor_type],)), 'Air temperature [K]': tuple((air_temp,)), 'Process temperature [K]': tuple((process_temp,)), 'Rotational speed [rpm]': tuple((rpm,)), 'Torque [Nm]': tuple((torque,)), 'Tool wear [min]': tuple((tool_wear,))})
+                cols_to_scale = tuple(('Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]'))
                 processed_df = raw_df.copy()
-                processed_df[cols_to_scale] = scaler1.transform(raw_df[cols_to_scale])
+                processed_df[list(cols_to_scale)] = scaler1.transform(raw_df[list(cols_to_scale)])
                 
                 probs = np.ravel(model1.predict_proba(processed_df)).tolist()
                 p_normal = probs*100.0 if len(probs)>0 else 0.0
@@ -423,8 +422,10 @@ elif st.session_state['current_page'] == 'motor':
                 st.plotly_chart(create_motor_gauge(calc_risk, "MOTOR RISK", color), use_container_width=True)
 
                 if st.button("💾 Save Motor Assessment"):
-                    new_log = pd.DataFrame([{'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset': 'Motor-01', 'Risk Level': f"{calc_risk:.1f}", 'Primary FMEA': 'Operational', 'Status': 'Logged', 'Grade': motor_type, 'Air Temp [K]': air_temp, 'Core Temp [K]': process_temp, 'RPM': rpm, 'Torque [Nm]': torque, 'Wear [min]': tool_wear, 'Vib RMS': '-', 'Vib Kurt': '-'}])
-                    st.session_state.inspection_log = pd.concat([new_log, st.session_state.inspection_log], ignore_index=True).head(30)
+                    new_m_data = dict(Timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), Asset='Motor-01', Risk_Level=f"{calc_risk:.1f}", Primary_FMEA='Operational', Status='Logged', Grade=motor_type, Air_Temp=air_temp, Core_Temp=process_temp, RPM=rpm, Torque=torque, Wear=tool_wear, Vib_RMS='-', Vib_Kurt='-')
+                    new_log = pd.DataFrame(tuple((new_m_data,)))
+                    new_log.columns = tuple(('Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt'))
+                    st.session_state.inspection_log = pd.concat((new_log, st.session_state.inspection_log), ignore_index=True).head(30)
                     st.success("Saved to Master.")
 
         with tab2:
@@ -449,7 +450,7 @@ elif st.session_state['current_page'] == 'motor':
 elif st.session_state['current_page'] == 'relay':
     if not st.session_state['relay_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        col1, col2, col3 = st.columns([1, 1.5, 1])
+        col1, col2, col3 = st.columns(tuple((1, 1.5, 1)))
         with col2:
             st.markdown("<br><h2 style='text-align: center; color: #9B59B6;'>🛡️ RelayGuard AI Login</h2>", unsafe_allow_html=True)
             with st.form("relay_login_form"):
@@ -461,7 +462,7 @@ elif st.session_state['current_page'] == 'relay':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns(tuple((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -471,7 +472,7 @@ elif st.session_state['current_page'] == 'relay':
 
         st.markdown("<div class='main-header' style='background: linear-gradient(90deg, #1E1E1E 0%, #2D2D2D 100%); border-left: 8px solid #9B59B6;'><h2 style='margin:0;'>🛡️ RelayGuard AI</h2></div>", unsafe_allow_html=True)
 
-        c_in, c_out = st.columns([1, 2.5])
+        c_in, c_out = st.columns(tuple((1, 2.5)))
         with c_in:
             with st.form("relay_form"):
                 asset_id = st.text_input("Relay ID", value="RELAY-01")
@@ -488,8 +489,10 @@ elif st.session_state['current_page'] == 'relay':
                 color = "#2ecc71" if risk < 30 else ("#f1c40f" if risk < 70 else "#e74c3c")
                 
                 st.session_state['relay_latest_eval'] = {'id': asset_id, 'risk': risk, 'status': status, 'color': color, 'mode': 'Heuristic Eval'}
-                new_log = pd.DataFrame([{'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'Noise Index': noise, 'Max Current (A)': current, 'Risk (%)': risk, 'RPN': int(risk*10), 'Status': status, 'Action': 'Logged'}])
-                st.session_state['relay_fmea_log'] = pd.concat([new_log, st.session_state['relay_fmea_log']], ignore_index=True).head(50)
+                new_r_data = dict(Timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), Asset_ID=asset_id, Noise_Index=noise, Max_Current=current, Risk=risk, RPN=int(risk*10), Status=status, Action='Logged')
+                new_log = pd.DataFrame(tuple((new_r_data,)))
+                new_log.columns = tuple(('Timestamp', 'Asset ID', 'Noise Index', 'Max Current (A)', 'Risk (%)', 'RPN', 'Status', 'Action'))
+                st.session_state['relay_fmea_log'] = pd.concat((new_log, st.session_state['relay_fmea_log']), ignore_index=True).head(50)
                 
                 st.plotly_chart(create_relay_gauge(risk, "RELAY RISK", color), use_container_width=True)
 
@@ -499,7 +502,7 @@ elif st.session_state['current_page'] == 'relay':
 elif st.session_state['current_page'] == 'substation':
     if not st.session_state['master_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns(tuple((1, 2, 1)))
         with col2:
             st.markdown("<br><div class='master-card'><h2 style='margin:0;'>🌐 SubstationGuard AI</h2><p style='margin:0; color:#00ff88;'>C-Level Executive Access</p></div>", unsafe_allow_html=True)
             with st.form("master_login"):
@@ -511,7 +514,7 @@ elif st.session_state['current_page'] == 'substation':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns(tuple((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -560,38 +563,38 @@ elif st.session_state['current_page'] == 'substation':
         # 3. Master FMEA Registry
         st.markdown("### 📋 Master Plant FMEA Registry (Holistic View)")
         master_fmea = pd.DataFrame({
-            'Asset Module': ['Transformer Unit (Power)', 'Motor Assembly (Motion)', 'Protection Relay (Control)'],
-            'Current Risk': [f"{tx_risk:.1f}%", f"{motor_sys_risk:.1f}%", f"{relay_risk:.1f}%"],
-            'System Status': [
+            'Asset Module': tuple(('Transformer Unit (Power)', 'Motor Assembly (Motion)', 'Protection Relay (Control)')),
+            'Current Risk': tuple((f"{tx_risk:.1f}%", f"{motor_sys_risk:.1f}%", f"{relay_risk:.1f}%")),
+            'System Status': tuple((
                 "🔴 DANGER" if tx_risk >= 70 else ("🟡 WARNING" if tx_risk >= 35 else "🟢 SAFE"),
                 "🔴 DANGER" if motor_sys_risk >= 75 else ("🟡 WARNING" if motor_sys_risk >= 40 else "🟢 SAFE"),
                 "🔴 DANGER" if relay_risk >= 70 else ("🟡 WARNING" if relay_risk >= 30 else "🟢 SAFE")
-            ],
-            'AI Prescribed Action': [
+            )),
+            'AI Prescribed Action': tuple((
                 st.session_state.get('latest_eval', {}).get('action', 'Monitor'),
                 "Schedule Mechanical Check" if motor_sys_risk > 40 else "Monitor",
                 "Verify Calibration" if relay_risk > 30 else "Monitor"
-            ]
+            ))
         })
         st.dataframe(master_fmea.style.apply(highlight_fmea, axis=1), use_container_width=True, hide_index=True)
 
         st.markdown("---")
 
         # 4. Visual Analytics (Radar & Trend)
-        v_col1, v_col2 = st.columns([1, 1.5])
+        v_col1, v_col2 = st.columns(tuple((1, 1.5)))
         with v_col1:
             st.markdown("#### 🕸️ System Topology Risk Radar")
             fig_radar = go.Figure(data=go.Scatterpolar(
-                r=[tx_risk, motor_sys_risk, relay_risk, tx_risk],
-                theta=['Transformer', 'Motor', 'Relay', 'Transformer'],
+                r=tuple((tx_risk, motor_sys_risk, relay_risk, tx_risk)),
+                theta=tuple(('Transformer', 'Motor', 'Relay', 'Transformer')),
                 fill='toself', line_color='#e74c3c', fillcolor='rgba(231, 76, 60, 0.4)'
             ))
-            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=)), showlegend=False, height=350, margin=dict(t=30, b=30))
+            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=tuple((0, 100)))), showlegend=False, height=350, margin=dict(t=30, b=30))
             st.plotly_chart(fig_radar, use_container_width=True)
 
         with v_col2:
             st.markdown("#### 📈 Plant-Wide FMEA Historical Trend")
-            hist_data = []
+            hist_data = list()
             tx_log = st.session_state.get('fmea_log')
             if not tx_log.empty:
                 for _, row in tx_log.iterrows(): hist_data.append({'Time': row['Timestamp'], 'Risk': float(row['Overall Risk (%)']), 'Asset': 'Transformer'})
@@ -608,7 +611,7 @@ elif st.session_state['current_page'] == 'substation':
                 df_trend = pd.DataFrame(hist_data)
                 df_trend['Time'] = pd.to_datetime(df_trend['Time'])
                 df_trend = df_trend.sort_values('Time')
-                fig_trend = px.line(df_trend, x='Time', y='Risk', color='Asset', markers=True, line_shape='spline', color_discrete_sequence=['#3498DB', '#E74C3C', '#9B59B6'])
+                fig_trend = px.line(df_trend, x='Time', y='Risk', color='Asset', markers=True, line_shape='spline', color_discrete_sequence=tuple(('#3498DB', '#E74C3C', '#9B59B6')))
                 fig_trend.update_layout(height=350, margin=dict(t=20, b=20), yaxis_title="Risk Level (%)", xaxis_title="")
                 st.plotly_chart(fig_trend, use_container_width=True)
             else:
