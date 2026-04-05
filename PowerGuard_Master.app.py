@@ -31,6 +31,7 @@ st.markdown("""
     .zone-warn { width: 35%; background-color: #f1c40f; text-align: center; color: white; font-size: 12px; line-height: 20px; }
     .zone-dang { width: 25%; background-color: #e74c3c; text-align: center; color: white; font-size: 12px; line-height: 20px; }
     .main-header { background: linear-gradient(90deg, #1E1E1E 0%, #2D2D2D 100%); padding: 20px; border-radius: 10px; border-left: 8px solid #DD4B39; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 20px; }
+    .report-reasoning { background-color: #F4F6F7; padding: 20px; border-radius: 10px; border-left: 5px solid #2980B9; font-size: 16px; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -90,39 +91,45 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     val = float(value)
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=val,
-        number={'suffix': "%", 'font': {'size': 26, 'color': color, 'family': "Arial Black"}},
-        title={'text': title, 'font': {'size': 16, 'color': '#333', 'weight': 'bold'}},
-        gauge={
-            'axis': {'range': [0, max_v], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': color},
-            'bgcolor': "white", 'borderwidth': 2, 'bordercolor': "gray",
-            'steps': [
-                {'range':, 'color': '#E8F5E9'}, 
-                {'range':, 'color': '#FEF9E7'}, 
-                {'range':, 'color': '#FDEDEC'}
+        number=dict(suffix="%", font=dict(size=26, color=color, family="Arial Black")),
+        title=dict(text=title, font=dict(size=16, color='#333', weight='bold')),
+        gauge=dict(
+            axis=dict(range=[0, max_v], tickwidth=1, tickcolor="darkblue"),
+            bar=dict(color=color),
+            bgcolor="white", borderwidth=2, bordercolor="gray",
+            steps=[
+                dict(range=, color='#E8F5E9'), 
+                dict(range=, color='#FEF9E7'), 
+                dict(range=, color='#FDEDEC')
             ],
-            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': val}
-        }))
+            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
+        )))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
+def highlight_relay_fmea(row):
+    status = row.get('Status', '')
+    if 'SAFE' in status: return tuple(('background-color: #E8F5E9; color: #00A65A; font-weight: bold',)) * len(row)
+    if 'WARNING' in status: return tuple(('background-color: #FEF9E7; color: #D35400; font-weight: bold',)) * len(row)
+    if 'DANGER' in status: return tuple(('background-color: #FDEDEC; color: #C0392B; font-weight: bold',)) * len(row)
+    return tuple(('',)) * len(row)
+
 def create_relay_gauge(value, title, color):
-    val = float(value)
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=val,
-        number={'suffix': "%", 'font': {'size': 30, 'color': color}},
-        title={'text': title, 'font': {'size': 18, 'color': '#333'}},
-        gauge={
-            'axis': {'range':, 'tickwidth': 1},
-            'bar': {'color': color},
-            'bgcolor': "white",
-            'steps': [
-                {'range':, 'color': 'rgba(46, 204, 113, 0.2)'},
-                {'range':, 'color': 'rgba(241, 196, 15, 0.2)'},
-                {'range':, 'color': 'rgba(231, 76, 60, 0.2)'}
+        mode="gauge+number", value=float(value),
+        number=dict(suffix="%", font=dict(size=30, color=color)),
+        title=dict(text=title, font=dict(size=18, color='#333')),
+        gauge=dict(
+            axis=dict(range=, tickwidth=1),
+            bar=dict(color=color),
+            bgcolor="white",
+            steps=[
+                dict(range=, color='rgba(46, 204, 113, 0.2)'),
+                dict(range=, color='rgba(241, 196, 15, 0.2)'),
+                dict(range=, color='rgba(231, 76, 60, 0.2)')
             ],
-            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': val}
-        }
+            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=float(value))
+        )
     ))
     fig.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
@@ -210,6 +217,7 @@ if st.session_state['current_page'] == 'portal':
 elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
+        
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns()
         with col2:
@@ -273,7 +281,6 @@ elif st.session_state['current_page'] == 'transformer':
                 m2.metric("Status", status)
                 m3.metric("AI Confidence", f"{get_tx_confidence(model_health, input_df):.1f} %")
 
-                # تم التصحيح هنا جذرياً لتجنب أي ValueError في Plotly
                 fig_g = go.Figure(go.Indicator(
                     mode="gauge+number", 
                     value=float(h_score),
@@ -312,7 +319,6 @@ elif st.session_state['current_page'] == 'transformer':
                 t_input_norm = pd.DataFrame([[hufl*n_ratio, hull*n_ratio, mufl*n_ratio, mull*n_ratio, lufl*n_ratio, lull*n_ratio, hour, month]], columns=['HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'Hour', 'Month'])
                 pred_ot = float(model_thermal.predict(t_input_norm).item())
                 
-                # تم التصحيح هنا أيضاً لتجنب أي خطأ
                 fig_t = go.Figure(go.Indicator(
                     mode="gauge+number", 
                     value=float(pred_ot),
@@ -521,11 +527,11 @@ elif st.session_state['current_page'] == 'substation':
         """, unsafe_allow_html=True)
 
         # 1. Fetching all risks
-        tx_risk = float(st.session_state.get('latest_eval', {}).get('overall_risk', 0.0))
+        tx_risk = float(st.session_state.get('latest_eval', {}).get('overall_risk', 0.0)) if st.session_state.get('latest_eval') else 0.0
         m_r = float(st.session_state.get('motor_risk', 0.0)) / 100.0
         b_r = float(st.session_state.get('bearing_risk', 0.0)) / 100.0
         motor_sys_risk = (1.0 - ((1.0 - m_r) * (1.0 - b_r))) * 100.0
-        relay_risk = float(st.session_state.get('relay_latest_eval', {}).get('risk', 0.0))
+        relay_risk = float(st.session_state.get('relay_latest_eval', {}).get('risk', 0.0)) if st.session_state.get('relay_latest_eval') else 0.0
 
         # Series System Calculation
         global_reliability = (1.0 - (tx_risk/100.0)) * (1.0 - (motor_sys_risk/100.0)) * (1.0 - (relay_risk/100.0))
@@ -585,7 +591,6 @@ elif st.session_state['current_page'] == 'substation':
 
         with v_col2:
             st.markdown("#### 📈 Plant-Wide FMEA Historical Trend")
-            # Aggregating history
             hist_data = []
             tx_log = st.session_state.get('fmea_log')
             if not tx_log.empty:
