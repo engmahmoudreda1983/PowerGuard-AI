@@ -827,7 +827,7 @@ elif st.session_state['current_page'] == 'substation':
                     line_color='#e74c3c',
                     fillcolor='rgba(231, 76, 60, 0.4)'
                 ))
-                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=)), showlegend=False, height=350, margin=dict(t=30, b=30))
+                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[100])), showlegend=False, height=350, margin=dict(t=30, b=30))
                 st.plotly_chart(fig_radar, use_container_width=True)
 
             with c_bar:
