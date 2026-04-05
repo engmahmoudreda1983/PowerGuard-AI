@@ -197,7 +197,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<br><h1 style='text-align: center; color: #0b2e59; font-size: 3rem;'>⚡ PowerGuard AI</h1>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #666; margin-bottom: 40px;'>Enterprise Asset Performance Management System</h4>", unsafe_allow_html=True)
     
-    col_m1, col_m2, col_m3 = st.columns()
+    col_m1, col_m2, col_m3 = st.columns([1, 2, 1])
     with col_m2:
         st.markdown("""
         <div style='background: linear-gradient(135deg, #1E1E1E 0%, #3a3a3a 100%); padding: 30px; border-radius: 12px; text-align: center; border-bottom: 5px solid #00ff88; box-shadow: 0 8px 16px rgba(0,0,0,0.2);'>
@@ -242,7 +242,7 @@ elif st.session_state['current_page'] == 'transformer':
         if st.button("⬅️ Back to Portal"): go_to_portal()
         
         st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             try:
                 st.image("logo.png", use_container_width=True)
@@ -260,7 +260,7 @@ elif st.session_state['current_page'] == 'transformer':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -334,12 +334,12 @@ elif st.session_state['current_page'] == 'transformer':
                 with col_g:
                     fig_g = go.Figure(go.Indicator(
                         mode="gauge+number", value=h_score,
-                        gauge={'axis': {'range':, 'tickwidth': 2, 'tickcolor': "black"},
+                        gauge={'axis': {'range': [60], 'tickwidth': 2, 'tickcolor': "black"},
                                'bar': {'color': "black"},
                                'steps': [
-                                   {'range':, 'color': "#00cc66"},
-                                   {'range':, 'color': "#ffcc00"},
-                                   {'range':, 'color': "#ff3333"}
+                                   {'range': [30], 'color': "#00cc66"},
+                                   {'range': [30, 45], 'color': "#ffcc00"},
+                                   {'range': [45, 60], 'color': "#ff3333"}
                                ]}))
                     fig_g.update_layout(height=280, margin=dict(t=30, b=10))
                     st.plotly_chart(fig_g, use_container_width=True)
@@ -351,7 +351,7 @@ elif st.session_state['current_page'] == 'transformer':
                     else: p_ch4, p_c2h4, p_c2h2 = 33.33, 33.33, 33.33 
                     
                     fig_tri = go.Figure()
-                    fig_tri.add_trace(go.Scatterternary(a=, b=, c=, mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
+                    fig_tri.add_trace(go.Scatterternary(a=[100], b=[100], c=[100], mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
                     fig_tri.add_trace(go.Scatterternary(a=[p_ch4], b=[p_c2h4], c=[p_c2h2], mode='markers', marker=dict(size=14, color='red', symbol='cross')))
                     fig_tri.update_layout(title="Duval Triangle", height=320, margin=dict(b=0), ternary=dict(sum=100, aaxis=dict(title="CH4 %", min=0), baxis=dict(title="C2H4 %", min=0), caxis=dict(title="C2H2 %", min=0)), showlegend=False)
                     st.plotly_chart(fig_tri, use_container_width=True)
@@ -396,7 +396,7 @@ elif st.session_state['current_page'] == 'transformer':
                 
                 pred_ot = float(model_thermal.predict(t_input_norm).item())
                 load_penalty = (load_factor_percent - 80.0) * 1.2 if load_factor_percent > 80.0 else 0.0
-                ambient_penalty = 12.0 if month in and 11 <= hour <= 16 else 0.0
+                ambient_penalty = 12.0 if month in [5, 6, 7, 8, 9] and 11 <= hour <= 16 else 0.0
                 
                 if load_penalty > 0 or ambient_penalty > 0: pred_ot = pred_ot + load_penalty + ambient_penalty
                 pred_ot = max(20.0, min(120.0, pred_ot))
@@ -412,11 +412,11 @@ elif st.session_state['current_page'] == 'transformer':
                 
                 fig_t = go.Figure(go.Indicator(
                     mode = "gauge+number", value = pred_ot,
-                    gauge = {'axis': {'range':}, 'bar': {'color': "black"},
+                    gauge = {'axis': {'range': [20, 120]}, 'bar': {'color': "black"},
                                 'steps': [
-                                    {'range':, 'color': "rgba(0, 204, 102, 0.4)"},
-                                    {'range':, 'color': "rgba(255, 204, 0, 0.4)"},
-                                    {'range':, 'color': "rgba(255, 51, 51, 0.4)"}
+                                    {'range': [20, 60], 'color': "rgba(0, 204, 102, 0.4)"},
+                                    {'range': [60, 80], 'color': "rgba(255, 204, 0, 0.4)"},
+                                    {'range': [80, 120], 'color': "rgba(255, 51, 51, 0.4)"}
                                 ]}))
                 fig_t.update_layout(height=350, margin=dict(t=30, b=10))
                 st.plotly_chart(fig_t, use_container_width=True)
@@ -506,7 +506,7 @@ elif st.session_state['current_page'] == 'transformer':
                     ot_temp = float(model_thermal.predict(scada_input_norm).item())
 
                     load_pen = (load_pct_ex - 80.0) * 1.2 if load_pct_ex > 80.0 else 0.0
-                    amb_pen = 12.0 if e_month in and 11 <= e_hour <= 16 else 0.0
+                    amb_pen = 12.0 if e_month in [5, 6, 7, 8, 9] and 11 <= e_hour <= 16 else 0.0
                     if load_pen > 0 or amb_pen > 0: ot_temp = ot_temp + load_pen + amb_pen
                     ot_temp = max(20.0, min(120.0, ot_temp))
 
@@ -527,7 +527,7 @@ elif st.session_state['current_page'] == 'transformer':
                         'dga_input_df': dga_input, 'thermal_input_df': scada_input_norm
                     }
                     
-                    new_entry = pd.DataFrame([{'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' '), 'RPN Level': rpn_level, 'Action Required': final_action}])
+                    new_entry = pd.DataFrame([{'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' ')[1], 'RPN Level': rpn_level, 'Action Required': final_action}])
                     st.session_state['fmea_log'] = pd.concat([st.session_state['fmea_log'], new_entry], ignore_index=True).tail(100)
                     
                     st.markdown(f"<h2 style='text-align: center; color: {final_color}; border: 2px solid {final_color}; padding: 10px; border-radius: 5px;'>{final_status}</h2>", unsafe_allow_html=True)
@@ -540,11 +540,11 @@ elif st.session_state['current_page'] == 'transformer':
                     
                     fig_risk = go.Figure(go.Indicator(
                         mode = "gauge+number", value = overall_risk,
-                        gauge = {'axis': {'range':}, 'bar': {'color': "black"},
+                        gauge = {'axis': {'range': [100]}, 'bar': {'color': "black"},
                                  'steps': [
-                                     {'range':, 'color': "rgba(0, 204, 102, 0.4)"}, 
-                                     {'range':, 'color': "rgba(255, 204, 0, 0.4)"}, 
-                                     {'range':, 'color': "rgba(255, 51, 51, 0.4)"}
+                                     {'range': [35], 'color': "rgba(0, 204, 102, 0.4)"}, 
+                                     {'range': [35, 70], 'color': "rgba(255, 204, 0, 0.4)"}, 
+                                     {'range': [70, 100], 'color': "rgba(255, 51, 51, 0.4)"}
                                  ]}))
                     fig_risk.update_layout(height=300, margin=dict(t=30, b=10))
                     st.plotly_chart(fig_risk, use_container_width=True)
@@ -570,12 +570,12 @@ elif st.session_state['current_page'] == 'transformer':
                     fig_r = go.Figure(go.Indicator(
                         mode = "gauge+number", value = e_data['overall_risk'],
                         number={'font': {'size': 40, 'color': '#0b2e59'}},
-                        gauge = {'axis': {'range':, 'tickwidth': 1, 'tickcolor': "black"},
+                        gauge = {'axis': {'range': [100], 'tickwidth': 1, 'tickcolor': "black"},
                                  'bar': {'color': "rgba(0,0,0,0.5)", 'thickness': 0.1},
                                  'steps': [
-                                     {'range':, 'color': "#00cc66"},
-                                     {'range':, 'color': "#ffcc00"},
-                                     {'range':, 'color': "#ff3333"}
+                                     {'range': [35], 'color': "#00cc66"},
+                                     {'range': [35, 70], 'color': "#ffcc00"},
+                                     {'range': [70, 100], 'color': "#ff3333"}
                                  ]}))
                     fig_r.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor="rgba(0,0,0,0)")
                     st.plotly_chart(fig_r, use_container_width=True)
@@ -600,7 +600,7 @@ elif st.session_state['current_page'] == 'transformer':
                     else: p_ch4_v, p_c2h4_v, p_c2h2_v = 33.33, 33.33, 33.33 
                     
                     fig_tri_v = go.Figure()
-                    fig_tri_v.add_trace(go.Scatterternary(a=, b=, c=, mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
+                    fig_tri_v.add_trace(go.Scatterternary(a=[100], b=[100], c=[100], mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1), hoverinfo='skip'))
                     fig_tri_v.add_trace(go.Scatterternary(a=[p_ch4_v], b=[p_c2h4_v], c=[p_c2h2_v], mode='markers', marker=dict(size=14, color='red', symbol='cross', line=dict(width=2, color='black')), name='Diagnosis'))
                     fig_tri_v.update_layout(title={'text': "Duval Triangle (Fault Type)", 'font': {'color': 'black'}, 'y':0.95, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top'}, height=450, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)", ternary=dict(sum=100, aaxis=dict(title="CH4 %", min=0), baxis=dict(title="C2H4 %", min=0), caxis=dict(title="C2H2 %", min=0)), showlegend=False)
                     st.plotly_chart(fig_tri_v, use_container_width=True)
@@ -652,7 +652,7 @@ elif st.session_state['current_page'] == 'transformer':
                 if e_data['pred_temp'] > 80: issues_thermal.append(f"🚨 **Overheating Alert ({e_data['pred_temp']:.1f} °C)**")
                 elif e_data['pred_temp'] > 60: issues_thermal.append(f"🟡 **Elevated Temp ({e_data['pred_temp']:.1f} °C)**")
                 if e_data['load_factor'] > 80.0: issues_thermal.append(f"⚠️ **High Load Factor ({e_data['load_factor']:.1f}%)**")
-                if e_data['inputs']['month'] in and 11 <= e_data['inputs']['hour'] <= 16: issues_thermal.append("☀️ **Harsh Ambient Conditions**")
+                if e_data['inputs']['month'] in [5, 6, 7, 8, 9] and 11 <= e_data['inputs']['hour'] <= 16: issues_thermal.append("☀️ **Harsh Ambient Conditions**")
                 if not issues_thermal: issues_thermal.append("✅ Thermal parameters are within safe limits.")
 
                 col_t1, col_t2 = st.columns(2)
@@ -670,7 +670,7 @@ elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("<h2 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h2>", unsafe_allow_html=True)
             with st.form("motor_login_form"):
@@ -683,7 +683,7 @@ elif st.session_state['current_page'] == 'motor':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -878,7 +878,7 @@ elif st.session_state['current_page'] == 'motor':
                     cats = ['Heat (HDF)', 'Strain (OSF)', 'Power (PWF)', 'Wear (TWF)', 'Bearing (Vib)']
                     vals = [st.session_state.motor_faults.get('HDF',0), st.session_state.motor_faults.get('OSF',0), st.session_state.motor_faults.get('PWF',0), st.session_state.motor_faults.get('TWF',0), st.session_state.bearing_risk]
                     fig_r = go.Figure(data=go.Scatterpolar(r=vals, theta=cats, fill='toself', line_color='#DD4B39'))
-                    fig_r.update_layout(polar=dict(radialaxis=dict(visible=True, range=)), showlegend=False, height=350, margin=dict(t=30, b=30))
+                    fig_r.update_layout(polar=dict(radialaxis=dict(visible=True, range=[100])), showlegend=False, height=350, margin=dict(t=30, b=30))
                     st.plotly_chart(fig_r, use_container_width=True)
                 with er2:
                     st.markdown("#### 🛡️ System Viability Index")
@@ -913,7 +913,7 @@ elif st.session_state['current_page'] == 'relay':
                     else:
                         st.error("❌ Invalid Username or Password")
     else:
-        col_title, col_logout = st.columns()
+        col_title, col_logout = st.columns([10, 2])
         with col_title:
             if st.button("⬅️ Portal"): go_to_portal()
             st.markdown("<div class='main-header' style='padding: 15px;'><h2 style='margin:0;'>🛡️ RelayGuard AI - Health Dashboard</h2></div>", unsafe_allow_html=True)
@@ -1257,7 +1257,7 @@ elif st.session_state['current_page'] == 'substation':
     if not st.session_state['master_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br><br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("<div class='master-card'><h2 style='margin:0;'>🌐 SubstationGuard AI</h2><p style='margin:0; font-size:14px; color:#aaa;'>Enterprise Command Center Login</p></div>", unsafe_allow_html=True)
             with st.form("master_login_form"):
@@ -1270,7 +1270,7 @@ elif st.session_state['current_page'] == 'substation':
                         st.rerun()
                     else: st.error("❌ Invalid Admin Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -1333,7 +1333,7 @@ elif st.session_state['current_page'] == 'substation':
                     line_color='#e74c3c',
                     fillcolor='rgba(231, 76, 60, 0.4)'
                 ))
-                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=)), showlegend=False, height=350, margin=dict(t=30, b=30))
+                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[100])), showlegend=False, height=350, margin=dict(t=30, b=30))
                 st.plotly_chart(fig_radar, use_container_width=True)
 
             with c_bar:
