@@ -216,7 +216,7 @@ if st.session_state['current_page'] == 'portal':
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer Guard AI</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ TransformerGuard AI</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
         if st.button("Launch Transformer Module", use_container_width=True):
             st.session_state['current_page'] = 'transformer'
             st.rerun()
