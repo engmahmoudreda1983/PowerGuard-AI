@@ -90,19 +90,19 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     val = float(value)
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=val,
-        number={'suffix': "%", 'font': {'size': 26, 'color': color, 'family': "Arial Black"}},
-        title={'text': title, 'font': {'size': 16, 'color': '#333', 'weight': 'bold'}},
-        gauge={
-            'axis': {'range': [0, max_v], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': color},
-            'bgcolor': "white", 'borderwidth': 2, 'bordercolor': "gray",
-            'steps': [
-                {'range':, 'color': '#E8F5E9'}, 
-                {'range':, 'color': '#FEF9E7'}, 
-                {'range': [75, max_v], 'color': '#FDEDEC'}
+        number=dict(suffix="%", font=dict(size=26, color=color, family="Arial Black")),
+        title=dict(text=title, font=dict(size=16, color='#333', weight='bold')),
+        gauge=dict(
+            axis=dict(range=[0, max_v], tickwidth=1, tickcolor="darkblue"),
+            bar=dict(color=color),
+            bgcolor="white", borderwidth=2, bordercolor="gray",
+            steps=[
+                dict(range=, color='#E8F5E9'), 
+                dict(range=, color='#FEF9E7'), 
+                dict(range=, color='#FDEDEC')
             ],
-            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': val}
-        }))
+            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
+        )))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
@@ -114,22 +114,21 @@ def highlight_relay_fmea(row):
     return [''] * len(row)
 
 def create_relay_gauge(value, title, color):
-    val = float(value)
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=val,
-        number={'suffix': "%", 'font': {'size': 30, 'color': color}},
-        title={'text': title, 'font': {'size': 18, 'color': '#333'}},
-        gauge={
-            'axis': {'range':, 'tickwidth': 1},
-            'bar': {'color': color},
-            'bgcolor': "white",
-            'steps': [
-                {'range':, 'color': 'rgba(46, 204, 113, 0.2)'},
-                {'range':, 'color': 'rgba(241, 196, 15, 0.2)'},
-                {'range':, 'color': 'rgba(231, 76, 60, 0.2)'}
+        mode="gauge+number", value=float(value),
+        number=dict(suffix="%", font=dict(size=30, color=color)),
+        title=dict(text=title, font=dict(size=18, color='#333')),
+        gauge=dict(
+            axis=dict(range=, tickwidth=1),
+            bar=dict(color=color),
+            bgcolor="white",
+            steps=[
+                dict(range=, color='rgba(46, 204, 113, 0.2)'),
+                dict(range=, color='rgba(241, 196, 15, 0.2)'),
+                dict(range=, color='rgba(231, 76, 60, 0.2)')
             ],
-            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': val}
-        }
+            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=float(value))
+        )
     ))
     fig.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
