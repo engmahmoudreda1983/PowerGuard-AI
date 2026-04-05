@@ -13,6 +13,7 @@ from datetime import datetime
 import os
 import warnings
 
+# Suppress Version/Unpickling Warnings
 warnings.filterwarnings("ignore")
 
 # ==========================================
@@ -35,7 +36,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. تحميل النماذج
+# 2. تحميل كل النماذج الذكية
 # ==========================================
 @st.cache_resource
 def load_all_models():
@@ -60,7 +61,7 @@ def load_all_models():
 model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, models_ready = load_all_models()
 
 # ==========================================
-# 3. دوال مساعدة ورسومات (تم تأمين المدى)
+# 3. دوال مساعدة (Helper Functions)
 # ==========================================
 def get_tx_confidence(model, input_df):
     try:
@@ -80,10 +81,10 @@ def get_duval_diagnosis(ch4, c2h4, c2h2):
     return "D2 (High Energy Discharge)"
 
 def highlight_fmea(row):
-    status = str(row.get('Status', '')).upper()
-    if 'SAFE' in status: return ['background-color: #E8F5E9; color: #00A65A; font-weight: bold'] * len(row)
-    if 'WARN' in status: return ['background-color: #FEF9E7; color: #D35400; font-weight: bold'] * len(row)
-    if 'DANG' in status or 'ACTION' in status: return ['background-color: #FDEDEC; color: #C0392B; font-weight: bold'] * len(row)
+    status = row.get('Status', '')
+    if 'SAFE' in status.upper() or 'Safe' in status: return ['background-color: #E8F5E9; color: #00A65A; font-weight: bold'] * len(row)
+    if 'WARN' in status.upper(): return ['background-color: #FEF9E7; color: #D35400; font-weight: bold'] * len(row)
+    if 'DANG' in status.upper() or 'ACTION' in status.upper(): return ['background-color: #FDEDEC; color: #C0392B; font-weight: bold'] * len(row)
     return [''] * len(row)
 
 def create_motor_gauge(value, title, color, max_v=100.0, h=250):
@@ -93,42 +94,41 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
         number=dict(suffix="%", font=dict(size=26, color=color, family="Arial Black")),
         title=dict(text=title, font=dict(size=16, color='#333', weight='bold')),
         gauge=dict(
-            axis=dict(range=(0, max_v), tickwidth=1, tickcolor="darkblue"),
+            axis=dict(range=[0, max_v], tickwidth=1, tickcolor="darkblue"),
             bar=dict(color=color),
             bgcolor="white", borderwidth=2, bordercolor="gray",
-            steps=(
-                dict(range=(0, 40), color='#E8F5E9'), 
-                dict(range=(40, 75), color='#FEF9E7'), 
-                dict(range=(75, max_v), color='#FDEDEC')
-            ),
+            steps=[
+                dict(range=[40], color='#E8F5E9'), 
+                dict(range=[40, 75], color='#FEF9E7'), 
+                dict(range=[75, 100], color='#FDEDEC')
+            ],
             threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
         )))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
 def highlight_relay_fmea(row):
-    status = str(row.get('Status', '')).upper()
-    if 'SAFE' in status: return tuple(('background-color: #E8F5E9; color: #00A65A; font-weight: bold',)) * len(row)
-    if 'WARN' in status: return tuple(('background-color: #FEF9E7; color: #D35400; font-weight: bold',)) * len(row)
-    if 'DANG' in status: return tuple(('background-color: #FDEDEC; color: #C0392B; font-weight: bold',)) * len(row)
-    return tuple(('',)) * len(row)
+    status = row.get('Status', '')
+    if 'SAFE' in status: return ['background-color: #E8F5E9; color: #00A65A; font-weight: bold'] * len(row)
+    if 'WARNING' in status: return ['background-color: #FEF9E7; color: #D35400; font-weight: bold'] * len(row)
+    if 'DANGER' in status: return ['background-color: #FDEDEC; color: #C0392B; font-weight: bold'] * len(row)
+    return [''] * len(row)
 
 def create_relay_gauge(value, title, color):
-    val = float(value)
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=val,
+        mode="gauge+number", value=float(value),
         number=dict(suffix="%", font=dict(size=30, color=color)),
         title=dict(text=title, font=dict(size=18, color='#333')),
         gauge=dict(
-            axis=dict(range=(0, 100), tickwidth=1),
+            axis=dict(range=[100], tickwidth=1),
             bar=dict(color=color),
             bgcolor="white",
-            steps=(
-                dict(range=(0, 30), color='rgba(46, 204, 113, 0.2)'),
-                dict(range=(30, 70), color='rgba(241, 196, 15, 0.2)'),
-                dict(range=(70, 100), color='rgba(231, 76, 60, 0.2)')
-            ),
-            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
+            steps=[
+                dict(range=[30], color='rgba(46, 204, 113, 0.2)'),
+                dict(range=[30, 70], color='rgba(241, 196, 15, 0.2)'),
+                dict(range=[70, 100], color='rgba(231, 76, 60, 0.2)')
+            ],
+            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=float(value))
         )
     ))
     fig.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
@@ -136,26 +136,34 @@ def create_relay_gauge(value, title, color):
 
 def create_relay_radar(probs_list, classes_tup, color):
     fig = go.Figure(data=go.Scatterpolar(
-        r=tuple((p * 100 for p in probs_list)), theta=classes_tup, fill='toself', line_color=color, opacity=0.6
+        r=[p * 100 for p in probs_list], theta=classes_tup, fill='toself', line_color=color, opacity=0.6
     ))
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=(0, 100))), showlegend=False, height=350, margin=dict(l=30, r=30, t=30, b=30))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[100])), showlegend=False, height=350, margin=dict(l=30, r=30, t=30, b=30))
     return fig
 
 # ==========================================
-# 4. إدارة الجلسة (Session State)
+# 4. إعداد متغيرات الجلسة (Session State)
 # ==========================================
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'portal'
+
+# Transformer State
 if 'tx_logged_in' not in st.session_state: st.session_state['tx_logged_in'] = False
 if 'fmea_log' not in st.session_state: st.session_state['fmea_log'] = pd.DataFrame(columns=['Timestamp', 'Asset ID', 'DGA Index', 'Pred Temp', 'Overall Risk (%)', 'Status', 'RPN Level', 'Action Required'])
 if 'latest_eval' not in st.session_state: st.session_state['latest_eval'] = None
+
+# Motor State
 if 'motor_logged_in' not in st.session_state: st.session_state['motor_logged_in'] = False
 if 'motor_risk' not in st.session_state: st.session_state.motor_risk = 0.0
 if 'bearing_risk' not in st.session_state: st.session_state.bearing_risk = 0.0
 if 'motor_faults' not in st.session_state: st.session_state.motor_faults = {'HDF': 0.0, 'OSF': 0.0, 'PWF': 0.0, 'TWF': 0.0}
 if 'inspection_log' not in st.session_state: st.session_state['inspection_log'] = pd.DataFrame(columns=['Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt'])
+
+# Relay State
 if 'relay_logged_in' not in st.session_state: st.session_state['relay_logged_in'] = False
 if 'relay_fmea_log' not in st.session_state: st.session_state['relay_fmea_log'] = pd.DataFrame(columns=['Timestamp', 'Asset ID', 'Noise Index', 'Max Current (A)', 'Risk (%)', 'RPN', 'Status', 'Action'])
 if 'relay_latest_eval' not in st.session_state: st.session_state['relay_latest_eval'] = None
+
+# Master State
 if 'master_logged_in' not in st.session_state: st.session_state['master_logged_in'] = False
 
 def go_to_portal():
@@ -169,7 +177,7 @@ if st.session_state['current_page'] == 'portal':
     st.markdown("<br><h1 style='text-align: center; color: #0b2e59; font-size: 3rem;'>⚡ PowerGuard AI</h1>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #666; margin-bottom: 40px;'>Enterprise Asset Performance Management System</h4>", unsafe_allow_html=True)
     
-    col_m1, col_m2, col_m3 = st.columns()
+    col_m1, col_m2, col_m3 = st.columns([1, 2, 1])
     with col_m2:
         st.markdown("""
         <div style='background: linear-gradient(135deg, #1E1E1E 0%, #3a3a3a 100%); padding: 30px; border-radius: 12px; text-align: center; border-bottom: 5px solid #00ff88; box-shadow: 0 8px 16px rgba(0,0,0,0.2);'>
@@ -210,7 +218,7 @@ elif st.session_state['current_page'] == 'transformer':
     if not st.session_state['tx_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("<h2 style='text-align: center; color: #4da6ff;'>⚡ TransformerGuard Login</h2>", unsafe_allow_html=True)
             with st.form("tx_login_form"):
@@ -222,7 +230,7 @@ elif st.session_state['current_page'] == 'transformer':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -276,12 +284,12 @@ elif st.session_state['current_page'] == 'transformer':
                     mode="gauge+number", 
                     value=float(h_score),
                     gauge={
-                        'axis': {'range':, 'tickwidth': 2, 'tickcolor': "black"},
+                        'axis': {'range': [100], 'tickwidth': 2, 'tickcolor': "black"},
                         'bar': {'color': "black"},
                         'steps': [
-                            {'range':, 'color': "#00cc66"},
-                            {'range':, 'color': "#ffcc00"},
-                            {'range':, 'color': "#ff3333"}
+                            {'range': [30], 'color': "#00cc66"},
+                            {'range': [30, 45], 'color': "#ffcc00"},
+                            {'range': [45, 100], 'color': "#ff3333"}
                         ]
                     }
                 ))
@@ -314,12 +322,12 @@ elif st.session_state['current_page'] == 'transformer':
                     mode="gauge+number", 
                     value=float(pred_ot),
                     gauge={
-                        'axis': {'range':},
+                        'axis': {'range': [20, 150]},
                         'bar': {'color': "black"},
                         'steps': [
-                            {'range':, 'color': "rgba(0, 204, 102, 0.4)"},
-                            {'range':, 'color': "rgba(255, 204, 0, 0.4)"},
-                            {'range':, 'color': "rgba(255, 51, 51, 0.4)"}
+                            {'range': [20, 60], 'color': "rgba(0, 204, 102, 0.4)"},
+                            {'range': [60, 80], 'color': "rgba(255, 204, 0, 0.4)"},
+                            {'range': [80, 150], 'color': "rgba(255, 51, 51, 0.4)"}
                         ]
                     }
                 ))
@@ -366,7 +374,7 @@ elif st.session_state['current_page'] == 'transformer':
 elif st.session_state['current_page'] == 'motor':
     if not st.session_state['motor_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("<br><h2 style='text-align: center; color: #DD4B39;'>⚙️ MotorGuard Login</h2>", unsafe_allow_html=True)
             with st.form("motor_login_form"):
@@ -378,7 +386,7 @@ elif st.session_state['current_page'] == 'motor':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -455,7 +463,7 @@ elif st.session_state['current_page'] == 'relay':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -493,7 +501,7 @@ elif st.session_state['current_page'] == 'relay':
 elif st.session_state['current_page'] == 'substation':
     if not st.session_state['master_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
-        col1, col2, col3 = st.columns()
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("<br><div class='master-card'><h2 style='margin:0;'>🌐 SubstationGuard AI</h2><p style='margin:0; color:#00ff88;'>C-Level Executive Access</p></div>", unsafe_allow_html=True)
             with st.form("master_login"):
@@ -505,7 +513,7 @@ elif st.session_state['current_page'] == 'substation':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -579,7 +587,7 @@ elif st.session_state['current_page'] == 'substation':
                 theta=['Transformer', 'Motor', 'Relay', 'Transformer'],
                 fill='toself', line_color='#e74c3c', fillcolor='rgba(231, 76, 60, 0.4)'
             ))
-            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=(0, 100))), showlegend=False, height=350, margin=dict(t=30, b=30))
+            fig_radar.update_layout(polar={'radialaxis': {'visible': True, 'range': [100]}}, showlegend=False, height=350, margin=dict(t=30, b=30))
             st.plotly_chart(fig_radar, use_container_width=True)
 
         with v_col2:
