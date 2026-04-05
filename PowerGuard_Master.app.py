@@ -93,14 +93,14 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
         number=dict(suffix="%", font=dict(size=26, color=color, family="Arial Black")),
         title=dict(text=title, font=dict(size=16, color='#333', weight='bold')),
         gauge=dict(
-            axis=dict(range=[0, max_v], tickwidth=1, tickcolor="darkblue"),
+            axis=dict(range=(0, max_v), tickwidth=1, tickcolor="darkblue"),
             bar=dict(color=color),
             bgcolor="white", borderwidth=2, bordercolor="gray",
-            steps=[
-                dict(range=, color='#E8F5E9'), 
-                dict(range=, color='#FEF9E7'), 
-                dict(range=, color='#FDEDEC')
-            ],
+            steps=(
+                dict(range=(0, 40), color='#E8F5E9'), 
+                dict(range=(40, 75), color='#FEF9E7'), 
+                dict(range=(75, max_v), color='#FDEDEC')
+            ),
             threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
         )))
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
@@ -108,26 +108,27 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
 
 def highlight_relay_fmea(row):
     status = str(row.get('Status', '')).upper()
-    if 'SAFE' in status: return ['background-color: #E8F5E9; color: #00A65A; font-weight: bold'] * len(row)
-    if 'WARN' in status: return ['background-color: #FEF9E7; color: #D35400; font-weight: bold'] * len(row)
-    if 'DANG' in status: return ['background-color: #FDEDEC; color: #C0392B; font-weight: bold'] * len(row)
-    return [''] * len(row)
+    if 'SAFE' in status: return tuple(('background-color: #E8F5E9; color: #00A65A; font-weight: bold',)) * len(row)
+    if 'WARN' in status: return tuple(('background-color: #FEF9E7; color: #D35400; font-weight: bold',)) * len(row)
+    if 'DANG' in status: return tuple(('background-color: #FDEDEC; color: #C0392B; font-weight: bold',)) * len(row)
+    return tuple(('',)) * len(row)
 
 def create_relay_gauge(value, title, color):
+    val = float(value)
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=float(value),
+        mode="gauge+number", value=val,
         number=dict(suffix="%", font=dict(size=30, color=color)),
         title=dict(text=title, font=dict(size=18, color='#333')),
         gauge=dict(
-            axis=dict(range=, tickwidth=1),
+            axis=dict(range=(0, 100), tickwidth=1),
             bar=dict(color=color),
             bgcolor="white",
-            steps=[
-                dict(range=, color='rgba(46, 204, 113, 0.2)'),
-                dict(range=, color='rgba(241, 196, 15, 0.2)'),
-                dict(range=, color='rgba(231, 76, 60, 0.2)')
-            ],
-            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=float(value))
+            steps=(
+                dict(range=(0, 30), color='rgba(46, 204, 113, 0.2)'),
+                dict(range=(30, 70), color='rgba(241, 196, 15, 0.2)'),
+                dict(range=(70, 100), color='rgba(231, 76, 60, 0.2)')
+            ),
+            threshold=dict(line=dict(color="black", width=4), thickness=0.75, value=val)
         )
     ))
     fig.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
@@ -135,9 +136,9 @@ def create_relay_gauge(value, title, color):
 
 def create_relay_radar(probs_list, classes_tup, color):
     fig = go.Figure(data=go.Scatterpolar(
-        r=[p * 100 for p in probs_list], theta=classes_tup, fill='toself', line_color=color, opacity=0.6
+        r=tuple((p * 100 for p in probs_list)), theta=classes_tup, fill='toself', line_color=color, opacity=0.6
     ))
-    fig.update_layout(polar={'radialaxis': {'visible': True, 'range':}}, showlegend=False, height=350, margin=dict(l=30, r=30, t=30, b=30))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=(0, 100))), showlegend=False, height=350, margin=dict(l=30, r=30, t=30, b=30))
     return fig
 
 # ==========================================
@@ -578,7 +579,7 @@ elif st.session_state['current_page'] == 'substation':
                 theta=['Transformer', 'Motor', 'Relay', 'Transformer'],
                 fill='toself', line_color='#e74c3c', fillcolor='rgba(231, 76, 60, 0.4)'
             ))
-            fig_radar.update_layout(polar={'radialaxis': {'visible': True, 'range':}}, showlegend=False, height=350, margin=dict(t=30, b=30))
+            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=(0, 100))), showlegend=False, height=350, margin=dict(t=30, b=30))
             st.plotly_chart(fig_radar, use_container_width=True)
 
         with v_col2:
