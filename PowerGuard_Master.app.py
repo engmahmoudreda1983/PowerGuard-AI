@@ -1375,21 +1375,19 @@ elif st.session_state['current_page'] == 'grid':
         with st.spinner("🧠 AI is calculating future capacity demands..."):
             future = m.make_future_dataframe(periods=days_to_forecast * 24, freq='h')
             
-            # --- حقن درجات الحرارة آلياً حسب الشهر في الخلفية ليعمل الموديل ---
-            saudi_avg_temps = {
-                1: (22.0, 12.0), 2: (25.0, 14.0), 3: (30.0, 18.0), 
-                4: (35.0, 22.0), 5: (41.0, 26.0), 6: (45.0, 29.0), 
-                7: (47.0, 31.0), 8: (47.0, 31.0), 9: (43.0, 28.0), 
-                10: (37.0, 23.0), 11: (29.0, 18.0), 12: (24.0, 14.0)
-            }
+            # --- حقن درجات الحرارة آلياً بشكل رقمي صريح (Foolproof Method) ---
             future['Month_Num'] = future['ds'].dt.month
-            future['Temp_Max_Avg'] = future['Month_Num'].map(lambda x: saudi_avg_temps[x])
-            future['Temp_Min_Avg'] = future['Month_Num'].map(lambda x: saudi_avg_temps[x])
+            
+            max_temps = {1: 22.0, 2: 25.0, 3: 30.0, 4: 35.0, 5: 41.0, 6: 45.0, 7: 47.0, 8: 47.0, 9: 43.0, 10: 37.0, 11: 29.0, 12: 24.0}
+            min_temps = {1: 12.0, 2: 14.0, 3: 18.0, 4: 22.0, 5: 26.0, 6: 29.0, 7: 31.0, 8: 31.0, 9: 28.0, 10: 23.0, 11: 18.0, 12: 14.0}
+            
+            future['Temp_Max_Avg'] = future['Month_Num'].map(max_temps).astype(float)
+            future['Temp_Min_Avg'] = future['Month_Num'].map(min_temps).astype(float)
             # ----------------------------------------------------------------
 
             forecast = m.predict(future)
             
-            # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة إن أردنا
+            # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة
             future_only = forecast.tail(days_to_forecast * 24)
             peak_predicted_load = future_only['yhat'].max()
             st.session_state['forecasted_peak'] = peak_predicted_load
