@@ -1305,7 +1305,24 @@ elif st.session_state['current_page'] == 'substation':
                 </div>
             </div>
             """, unsafe_allow_html=True)
-
+	       # --- الإضافة الجديدة: دمج توقع الأحمال في التقرير المجمع ---
+            if st.session_state.get('forecasted_peak'):
+                peak_val = st.session_state['forecasted_peak']
+                st.markdown(f"""
+                <div style='background-color: #007acc10; padding: 25px; border-radius: 10px; border-left: 8px solid #007acc; border-right: 1px solid #ddd; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; margin-top: 20px;'>
+                    <h3 style='color: #007acc; margin-top: 0; font-weight: bold;'>🌍 Future Capacity Outlook (GridGuard AI)</h3>
+                    <p style='font-size: 18px; color: #333;'>The system predicts a peak load of <b>{peak_val:,.1f} MW</b> during the selected forecast horizon.</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # رسالة تحذير تتابعية تربط بين ريسك المحول والحمل المتوقع
+                if peak_val > 0 and tx_risk > 35: 
+                    st.markdown("""
+                    <div style='background-color: #fff3cd; padding: 15px; border-radius: 5px; border: 1px dashed #856404; margin-top: 10px;'>
+                        <strong style='color: #856404;'>⚠️ Critical Synergy Alert:</strong> The predicted load coincides with elevated Transformer Risk. Immediate initiation of auxiliary cooling protocols is recommended prior to the predicted peak.
+                    </div>
+                    """, unsafe_allow_html=True)
+            # -----------------------------------------------------------------
             st.markdown("<br>", unsafe_allow_html=True)
             report_txt = f"SUBSTATION DIGITAL TWIN - EXECUTIVE REPORT\n"
             report_txt += f"=============================================\n"
@@ -1368,36 +1385,44 @@ elif st.session_state['current_page'] == 'grid':
         st.markdown("### 📅 Forecast Horizon Configuration")
         col_config1, col_config2 = st.columns(2)
         with col_config1:
+            # 1. قائمة اختيار دول الخليج
+            country_list = ["Saudi Arabia", "UAE", "Kuwait", "Qatar", "Oman", "Bahrain"]
+            selected_country = st.selectbox("Select Country Profile", country_list)
+            
             c_d1, c_d2 = st.columns(2)
             start_date = c_d1.date_input("Start Date", value=datetime.today())
             end_date = c_d2.date_input("End Date", value=datetime.today() + pd.Timedelta(days=7))
             
         with col_config2:
-            st.info(f"💡 The AI will simulate hourly loads from **{start_date.strftime('%Y-%m-%d')}** to **{end_date.strftime('%Y-%m-%d')}**.")
+            st.info(f"💡 The AI will simulate hourly loads for **{selected_country}** from **{start_date.strftime('%Y-%m-%d')}** to **{end_date.strftime('%Y-%m-%d')}**.")
 
         if start_date > end_date:
             st.error("⚠️ Start Date must be before End Date.")
             st.stop()
 
-        with st.spinner("🧠 AI is calculating future capacity demands..."):
-            # إنشاء جدول زمني مخصص للفترة التي طلبها المستخدم فقط (لا حاجة للبدء من 2023)
+        with st.spinner(f"🧠 AI is calculating future capacity demands for {selected_country}..."):
             future_dates = pd.date_range(start=start_date, end=end_date, freq='h')
             future = pd.DataFrame({'ds': future_dates})
-            
-            # --- حقن درجات الحرارة آلياً بشكل رقمي صريح ---
             future['Month_Num'] = future['ds'].dt.month
-            max_temps = {1: 22.0, 2: 25.0, 3: 30.0, 4: 35.0, 5: 41.0, 6: 45.0, 7: 47.0, 8: 47.0, 9: 43.0, 10: 37.0, 11: 29.0, 12: 24.0}
-            min_temps = {1: 12.0, 2: 14.0, 3: 18.0, 4: 22.0, 5: 26.0, 6: 29.0, 7: 31.0, 8: 31.0, 9: 28.0, 10: 23.0, 11: 18.0, 12: 14.0}
-            future['Temp_Max_Avg'] = future['Month_Num'].map(max_temps).astype(float)
-            future['Temp_Min_Avg'] = future['Month_Num'].map(min_temps).astype(float)
-            # ----------------------------------------------------------------
+            
+            # 2. قاعدة بيانات حرارة الخليج (تلقائية بالكامل)
+            gulf_temps = {
+                "Saudi Arabia": {1:(22.0,12.0), 2:(25.0,14.0), 3:(30.0,18.0), 4:(35.0,22.0), 5:(41.0,26.0), 6:(45.0,29.0), 7:(47.0,31.0), 8:(47.0,31.0), 9:(43.0,28.0), 10:(37.0,23.0), 11:(29.0,18.0), 12:(24.0,14.0)},
+                "UAE": {1:(24.0,14.0), 2:(26.0,16.0), 3:(30.0,19.0), 4:(35.0,23.0), 5:(40.0,27.0), 6:(42.0,30.0), 7:(44.0,32.0), 8:(44.0,32.0), 9:(41.0,29.0), 10:(37.0,25.0), 11:(31.0,21.0), 12:(26.0,17.0)},
+                "Kuwait": {1:(19.0,8.0), 2:(22.0,10.0), 3:(28.0,15.0), 4:(34.0,20.0), 5:(41.0,26.0), 6:(46.0,30.0), 7:(48.0,32.0), 8:(47.0,32.0), 9:(43.0,28.0), 10:(36.0,22.0), 11:(27.0,15.0), 12:(21.0,10.0)},
+                "Qatar": {1:(22.0,14.0), 2:(23.0,15.0), 3:(27.0,18.0), 4:(32.0,22.0), 5:(38.0,26.0), 6:(41.0,29.0), 7:(42.0,31.0), 8:(42.0,31.0), 9:(39.0,28.0), 10:(35.0,24.0), 11:(29.0,20.0), 12:(24.0,16.0)},
+                "Oman": {1:(25.0,17.0), 2:(26.0,18.0), 3:(30.0,21.0), 4:(35.0,25.0), 5:(40.0,30.0), 6:(40.0,31.0), 7:(38.0,30.0), 8:(36.0,28.0), 9:(36.0,27.0), 10:(35.0,25.0), 11:(30.0,21.0), 12:(26.0,18.0)},
+                "Bahrain": {1:(20.0,14.0), 2:(21.0,15.0), 3:(25.0,18.0), 4:(30.0,22.0), 5:(35.0,26.0), 6:(38.0,29.0), 7:(39.0,31.0), 8:(39.0,31.0), 9:(37.0,29.0), 10:(33.0,26.0), 11:(28.0,21.0), 12:(22.0,16.0)}
+            }
+            selected_profile = gulf_temps.get(selected_country, gulf_temps["Saudi Arabia"])
+            
+            future['Temp_Max_Avg'] = future['Month_Num'].map(lambda x: selected_profile[x]).astype(float)
+            future['Temp_Min_Avg'] = future['Month_Num'].map(lambda x: selected_profile[x]).astype(float)
 
-            # التوقع للفترة المطلوبة فقط
-            # التوقع للفترة المطلوبة فقط
             forecast = m.predict(future)
             future_only = forecast.copy()
             
-            # --- تطبيق منحنى الحمل اليومي (الهندسي) الخاص بالسعودية ---
+            # --- تطبيق منحنى الحمل اليومي (الهندسي) ---
             hourly_profile = {
                 0: 0.85, 1: 0.82, 2: 0.80, 3: 0.78, 4: 0.77, 5: 0.78, 
                 6: 0.82, 7: 0.88, 8: 0.95, 9: 1.00, 10: 1.05, 11: 1.10, 
@@ -1406,9 +1431,7 @@ elif st.session_state['current_page'] == 'grid':
             }
             future_only['Hour'] = future_only['ds'].dt.hour
             future_only['yhat'] = future_only['yhat'] * future_only['Hour'].map(hourly_profile)
-            # ----------------------------------------------------------------
             
-            # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة
             peak_predicted_load = future_only['yhat'].max()
             st.session_state['forecasted_peak'] = peak_predicted_load
 
