@@ -233,7 +233,7 @@ if st.session_state['current_page'] == 'portal':
             st.session_state['current_page'] = 'relay'
             st.rerun()
 
-    st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by EPGC. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 6. المحولات (Transformer Guard)
