@@ -1425,11 +1425,12 @@ elif st.session_state['current_page'] == 'grid':
                 st.markdown("#### 🌦️ Seasonality (Summer vs Winter)")
                 forecast['Month'] = forecast['ds'].dt.month_name()
                 months_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-                monthly_data = forecast.groupby('Month')['yearly'].mean().reset_index()
+                # تم تغيير 'yearly' إلى 'yhat'
+                monthly_data = forecast.groupby('Month')['yhat'].mean().reset_index()
                 monthly_data['Month'] = pd.Categorical(monthly_data['Month'], categories=months_order, ordered=True)
                 monthly_data = monthly_data.sort_values('Month')
-                fig_season = px.bar(monthly_data, x='Month', y='yearly', color='yearly', color_continuous_scale='RdBu_r')
-                fig_season.update_layout(showlegend=False, yaxis_tickformat=',.0f', yaxis_title="Load Variance (MW)")
+                fig_season = px.bar(monthly_data, x='Month', y='yhat', color='yhat', color_continuous_scale='RdBu_r')
+                fig_season.update_layout(showlegend=False, yaxis_tickformat=',.0f', yaxis_title="Average Load (MW)")
                 st.plotly_chart(fig_season, use_container_width=True)
 
             st.markdown("#### ⏱️ Weekly & Daily Load Patterns")
@@ -1437,20 +1438,22 @@ elif st.session_state['current_page'] == 'grid':
             with col_w1:
                 forecast['DayOfWeek'] = forecast['ds'].dt.day_name()
                 days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                weekly_data = forecast.groupby('DayOfWeek')['weekly'].mean().reset_index()
+                # تم تغيير 'weekly' إلى 'yhat'
+                weekly_data = forecast.groupby('DayOfWeek')['yhat'].mean().reset_index()
                 weekly_data['DayOfWeek'] = pd.Categorical(weekly_data['DayOfWeek'], categories=days_order, ordered=True)
                 weekly_data = weekly_data.sort_values('DayOfWeek')
-                fig_weekly = px.line(weekly_data, x='DayOfWeek', y='weekly', markers=True)
+                fig_weekly = px.line(weekly_data, x='DayOfWeek', y='yhat', markers=True)
                 fig_weekly.update_traces(line_color='#2ca02c', line_width=3)
-                fig_weekly.update_layout(yaxis_title="Load Variance (MW)")
+                fig_weekly.update_layout(yaxis_title="Average Load (MW)")
                 st.plotly_chart(fig_weekly, use_container_width=True)
 
             with col_w2:
                 forecast['Hour'] = forecast['ds'].dt.hour
-                daily_data = forecast.groupby('Hour')['daily'].mean().reset_index()
-                fig_daily = px.area(daily_data, x='Hour', y='daily')
+                # تم تغيير 'daily' إلى 'yhat'
+                daily_data = forecast.groupby('Hour')['yhat'].mean().reset_index()
+                fig_daily = px.area(daily_data, x='Hour', y='yhat')
                 fig_daily.update_traces(line_color='#ff7f0e')
-                fig_daily.update_layout(xaxis=dict(tickmode='linear', dtick=2), yaxis_title="Load Variance (MW)")
+                fig_daily.update_layout(xaxis=dict(tickmode='linear', dtick=2), yaxis_title="Average Load (MW)")
                 st.plotly_chart(fig_daily, use_container_width=True)
 
         with tab_main3:
