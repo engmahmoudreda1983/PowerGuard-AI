@@ -1368,38 +1368,45 @@ elif st.session_state['current_page'] == 'grid':
         st.markdown("### 📅 Forecast Horizon Configuration")
         col_config1, col_config2 = st.columns(2)
         with col_config1:
-            days_to_forecast = st.slider("Select Horizon (Days)", min_value=1, max_value=365, value=7, help="How many days into the future to predict.")
+            c_d1, c_d2 = st.columns(2)
+            start_date = c_d1.date_input("Start Date", value=datetime.today())
+            end_date = c_d2.date_input("End Date", value=datetime.today() + pd.Timedelta(days=7))
+            
         with col_config2:
-            st.info(f"💡 The AI will simulate hourly loads for the next **{days_to_forecast} days**.")
+            st.info(f"💡 The AI will simulate hourly loads from **{start_date.strftime('%Y-%m-%d')}** to **{end_date.strftime('%Y-%m-%d')}**.")
+
+        if start_date > end_date:
+            st.error("⚠️ Start Date must be before End Date.")
+            st.stop()
 
         with st.spinner("🧠 AI is calculating future capacity demands..."):
-            future = m.make_future_dataframe(periods=days_to_forecast * 24, freq='h')
+            # إنشاء جدول زمني مخصص للفترة التي طلبها المستخدم فقط (لا حاجة للبدء من 2023)
+            future_dates = pd.date_range(start=start_date, end=end_date, freq='h')
+            future = pd.DataFrame({'ds': future_dates})
             
-            # --- حقن درجات الحرارة آلياً بشكل رقمي صريح (Foolproof Method) ---
+            # --- حقن درجات الحرارة آلياً بشكل رقمي صريح ---
             future['Month_Num'] = future['ds'].dt.month
-            
             max_temps = {1: 22.0, 2: 25.0, 3: 30.0, 4: 35.0, 5: 41.0, 6: 45.0, 7: 47.0, 8: 47.0, 9: 43.0, 10: 37.0, 11: 29.0, 12: 24.0}
             min_temps = {1: 12.0, 2: 14.0, 3: 18.0, 4: 22.0, 5: 26.0, 6: 29.0, 7: 31.0, 8: 31.0, 9: 28.0, 10: 23.0, 11: 18.0, 12: 14.0}
-            
             future['Temp_Max_Avg'] = future['Month_Num'].map(max_temps).astype(float)
             future['Temp_Min_Avg'] = future['Month_Num'].map(min_temps).astype(float)
             # ----------------------------------------------------------------
 
+            # التوقع للفترة المطلوبة فقط
             forecast = m.predict(future)
+            future_only = forecast.copy()
             
             # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة
-            future_only = forecast.tail(days_to_forecast * 24)
             peak_predicted_load = future_only['yhat'].max()
             st.session_state['forecasted_peak'] = peak_predicted_load
 
         tab_main1, tab_main2, tab_main3 = st.tabs(["📈 High-Resolution Forecast", "📊 Seasonal & Trend Analysis", "📄 Export Future Data"])
 
         with tab_main1:
-            st.markdown(f"#### 🔍 Hourly Load Prediction (Next {days_to_forecast} Days)")
+            delta_days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days
+            st.markdown(f"#### 🔍 Hourly Load Prediction ({delta_days} Days Horizon)")
             fig_fcst = go.Figure()
             fig_fcst.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat'], mode='lines', name='Predicted Load (MW)', line=dict(color='#ff4b4b', width=2)))
-            fig_fcst.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_upper'], fill=None, mode='lines', line_color='rgba(255, 75, 75, 0.2)', showlegend=False))
-            fig_fcst.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(255, 75, 75, 0.2)', name='Confidence Interval'))
             fig_fcst.update_layout(height=400, hovermode="x unified", xaxis_title="Date & Time", yaxis_title="Active Load (MW)", yaxis_tickformat=',.0f', margin=dict(t=10, b=10))
             st.plotly_chart(fig_fcst, use_container_width=True)
 
@@ -1407,8 +1414,10 @@ elif st.session_state['current_page'] == 'grid':
             c1.metric("Predicted Peak Load", f"{peak_predicted_load:,.1f} MW", delta="Critical", delta_color="inverse")
             c2.metric("Predicted Minimum Load", f"{future_only['yhat'].min():,.1f} MW")
             c3.metric("Average Load", f"{future_only['yhat'].mean():,.1f} MW")
+            
+            # تصليح خطأ صياغة الوقت (:%00 تم تحويلها إلى :00 بشكل صحيح)
             peak_time = future_only.loc[future_only['yhat'].idxmax(), 'ds']
-            c4.metric("Time of Peak Load", peak_time.strftime("%A, %H:%00"))
+            c4.metric("Time of Peak Load", peak_time.strftime("%A, %H:00"))
 
         with tab_main2:
             col_chart1, col_chart2 = st.columns(2)
