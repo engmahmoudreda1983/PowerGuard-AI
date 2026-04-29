@@ -12,13 +12,14 @@ import joblib
 from datetime import datetime
 import os
 import warnings
+from prophet.serialize import model_from_json  # <--- إضافة مكتبة التوقع
 
 # Suppress Version/Unpickling Warnings
 warnings.filterwarnings("ignore")
 
-# ==========================================
+# =========================================
 # 1. إعدادات الصفحة والتصميم الأساسي
-# ==========================================
+# =========================================
 st.set_page_config(page_title="PowerGuard AI Enterprise", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -40,9 +41,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
+# =========================================
 # 2. تحميل كل النماذج الذكية
-# ==========================================
+# =========================================
 @st.cache_resource
 def load_all_models():
     try:
@@ -65,9 +66,9 @@ def load_all_models():
 
 model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, models_ready = load_all_models()
 
-# ==========================================
+# =========================================
 # 3. دوال مساعدة (Helper Functions)
-# ==========================================
+# =========================================
 def get_tx_confidence(model, input_df):
     try:
         preds = np.array(list((tree.predict(input_df.values).item() for tree in model.estimators_)))
@@ -160,9 +161,9 @@ def create_relay_radar(probs_list, classes_tup, color):
     )
     return fig
 
-# ==========================================
+# =========================================
 # 4. إعداد متغيرات الجلسة (Session State)
-# ==========================================
+# =========================================
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'portal'
 
 # متغيرات المحولات والمحركات
@@ -184,16 +185,18 @@ if 'relay_fmea_log' not in st.session_state:
     st.session_state['relay_fmea_log'] = pd.DataFrame(columns=cols_fmea)
 if 'relay_latest_eval' not in st.session_state: st.session_state['relay_latest_eval'] = None
 
-# متغيرات غرفة التحكم المركزية
+# متغيرات غرفة التحكم المركزية وتوقع الأحمال (الإضافة الجديدة)
 if 'master_logged_in' not in st.session_state: st.session_state['master_logged_in'] = False
+if 'grid_logged_in' not in st.session_state: st.session_state['grid_logged_in'] = False  # <-- إضافة التوقع
+if 'forecasted_peak' not in st.session_state: st.session_state['forecasted_peak'] = None # <-- لحفظ أقصى حمل
 
 def go_to_portal():
     st.session_state['current_page'] = 'portal'
     st.rerun()
 
-# ==========================================
+# =========================================
 # 5. البوابة الرئيسية (Portal)
-# ==========================================
+# =========================================
 if st.session_state['current_page'] == 'portal':
     st.markdown("<br><br><h1 style='text-align: center; color: #0b2e59;'>⚡ PowerGuard AI Enterprise Portal</h1>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #666; margin-bottom: 40px;'>Enterprise Asset Performance Management System</h4>", unsafe_allow_html=True)
@@ -216,7 +219,7 @@ if st.session_state['current_page'] == 'portal':
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ TransformerGuard AI</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer Guard</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
         if st.button("Launch Transformer Module", use_container_width=True):
             st.session_state['current_page'] = 'transformer'
             st.rerun()
@@ -233,7 +236,16 @@ if st.session_state['current_page'] == 'portal':
             st.session_state['current_page'] = 'relay'
             st.rerun()
 
-    st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by EPGC. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
+    # --- الإضافة الجديدة في البوابة (GridGuard AI) ---
+    st.markdown("<hr style='margin-top:20px; margin-bottom:20px;'>", unsafe_allow_html=True)
+    col_g1, col_g2, col_g3 = st.columns([1, 2, 1])
+    with col_g2:
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #007acc;'><h3>🌍 GridGuard AI</h3><p>Capacity Planning & Load Forecasting</p></div>", unsafe_allow_html=True)
+        if st.button("Launch Grid Forecasting Module", use_container_width=True):
+            st.session_state['current_page'] = 'grid'
+            st.rerun()
+
+    st.markdown("<div style='text-align: center; color: #888; padding: 10px; margin-top: 50px;'><strong>© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. All Rights Reserved.</strong></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 6. المحولات (Transformer Guard)
@@ -524,7 +536,7 @@ elif st.session_state['current_page'] == 'transformer':
                         'dga_input_df': dga_input, 'thermal_input_df': scada_input_norm
                     }
                     
-                    new_entry = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' '), 'RPN Level': rpn_level, 'Action Required': final_action},)))
+                    new_entry = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' ')[1], 'RPN Level': rpn_level, 'Action Required': final_action},)))
                     st.session_state['fmea_log'] = pd.concat((st.session_state['fmea_log'], new_entry), ignore_index=True).tail(100)
                     
                     st.markdown(f"<h2 style='text-align: center; color: {final_color}; border: 2px solid {final_color}; padding: 10px; border-radius: 5px;'>{final_status}</h2>", unsafe_allow_html=True)
@@ -1194,11 +1206,10 @@ elif st.session_state['current_page'] == 'substation':
 
             st.markdown("---")
 
-            # 💡 التعديل: تقسيم الشاشة لـ 3 أعمدة أنيقة (مؤشر + رادار + بار شارت)
             v_col1, v_col2, v_col3 = st.columns(list((1, 1, 1.5)))
             
             with v_col1:
-                st.markdown("#### 🚨 Cascading Risk")
+                st.markdown("#### 🚨 Cascading Risk Score")
                 fig_sub_gauge = go.Figure(go.Indicator(
                     mode="gauge+number", value=float(global_risk),
                     number={'suffix': "%", 'font': {'size': 30, 'color': action_color}},
@@ -1240,7 +1251,6 @@ elif st.session_state['current_page'] == 'substation':
 
             st.markdown("---")
 
-            # Master FMEA Registry
             st.markdown("### 📋 Master Plant FMEA Registry (Holistic View)")
             tx_eval = st.session_state.get('latest_eval', {})
             re_eval = st.session_state.get('relay_latest_eval', {})
@@ -1262,7 +1272,6 @@ elif st.session_state['current_page'] == 'substation':
 
             st.markdown("---")
 
-            # 💡 التقرير التنفيذي بصيغة (Bullet Points)
             st.markdown("### 🧠 C-Level Executive AI Briefing")
             
             if global_risk < 30:
@@ -1297,7 +1306,6 @@ elif st.session_state['current_page'] == 'substation':
             </div>
             """, unsafe_allow_html=True)
 
-            # 💡 زر تحميل التقرير
             st.markdown("<br>", unsafe_allow_html=True)
             report_txt = f"SUBSTATION DIGITAL TWIN - EXECUTIVE REPORT\n"
             report_txt += f"=============================================\n"
@@ -1319,3 +1327,126 @@ elif st.session_state['current_page'] == 'substation':
             report_txt += f"- Protection Relays: {re_str}\n"
             
             st.download_button("📥 Download Official Substation Report (TXT)", data=report_txt, file_name=f"Substation_Report_{datetime.now().strftime('%Y%m%d')}.txt", use_container_width=True)
+
+# ==============================================================================
+# 10. الوحدة الإضافية: توقع الأحمال (GridGuard AI) - دون المساس بالأساسيات
+# ==============================================================================
+elif st.session_state['current_page'] == 'grid':
+    if not st.session_state['grid_logged_in']:
+        if st.button("⬅️ Back to Portal"): go_to_portal()
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 1.2, 1])
+        with col2:
+            st.markdown("<div style='background-color: #007acc; padding: 20px; border-radius: 10px; text-align: center; color: white;'><h2 style='margin:0;'>🌍 GridGuard AI</h2><p style='margin:0;'>Capacity Planning & Load Forecasting</p></div><br>", unsafe_allow_html=True)
+            with st.form("grid_login_form"):
+                st.warning("🔒 Restricted Access.")
+                user = st.text_input("Username")
+                pwd = st.text_input("Password", type="password")
+                if st.form_submit_button("Secure Login", use_container_width=True):
+                    if user == st.secrets["APP_USERNAME"] and pwd == st.secrets["APP_PASSWORD"]:
+                        st.session_state['grid_logged_in'] = True
+                        st.rerun()
+                    else: st.error("❌ Invalid Credentials")
+    else:
+        col_l, col_r = st.columns([10, 1])
+        with col_l:
+            if st.button("⬅️ Portal"): go_to_portal()
+        with col_r:
+            if st.button("Logout 🚪"):
+                st.session_state['grid_logged_in'] = False
+                go_to_portal()
+
+        st.markdown("<h1 style='color: #007acc;'>⚡ Substation Load Forecasting</h1>", unsafe_allow_html=True)
+        
+        try:
+            with open('global_load_model.json', 'r') as fin:
+                m = model_from_json(fin.read())
+        except Exception as e:
+            st.error("⚠️ Model file 'global_load_model.json' not found. Please ensure it is uploaded.")
+            st.stop()
+
+        st.markdown("### 📅 Forecast Horizon Configuration")
+        col_config1, col_config2 = st.columns(2)
+        with col_config1:
+            days_to_forecast = st.slider("Select Horizon (Days)", min_value=1, max_value=365, value=7, help="How many days into the future to predict.")
+        with col_config2:
+            st.info(f"💡 The AI will simulate hourly loads for the next **{days_to_forecast} days**.")
+
+        with st.spinner("🧠 AI is calculating future capacity demands..."):
+            future = m.make_future_dataframe(periods=days_to_forecast * 24, freq='H')
+            forecast = m.predict(future)
+            
+            # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة إن أردنا
+            future_only = forecast.tail(days_to_forecast * 24)
+            peak_predicted_load = future_only['yhat'].max()
+            st.session_state['forecasted_peak'] = peak_predicted_load
+
+        tab_main1, tab_main2, tab_main3 = st.tabs(["📈 High-Resolution Forecast", "📊 Seasonal & Trend Analysis", "📄 Export Future Data"])
+
+        with tab_main1:
+            st.markdown(f"#### 🔍 Hourly Load Prediction (Next {days_to_forecast} Days)")
+            fig_fcst = go.Figure()
+            fig_fcst.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat'], mode='lines', name='Predicted Load (MW)', line=dict(color='#ff4b4b', width=2)))
+            fig_fcst.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_upper'], fill=None, mode='lines', line_color='rgba(255, 75, 75, 0.2)', showlegend=False))
+            fig_fcst.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(255, 75, 75, 0.2)', name='Confidence Interval'))
+            fig_fcst.update_layout(height=400, hovermode="x unified", xaxis_title="Date & Time", yaxis_title="Active Load (MW)", yaxis_tickformat=',.0f', margin=dict(t=10, b=10))
+            st.plotly_chart(fig_fcst, use_container_width=True)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Predicted Peak Load", f"{peak_predicted_load:,.1f} MW", delta="Critical", delta_color="inverse")
+            c2.metric("Predicted Minimum Load", f"{future_only['yhat'].min():,.1f} MW")
+            c3.metric("Average Load", f"{future_only['yhat'].mean():,.1f} MW")
+            peak_time = future_only.loc[future_only['yhat'].idxmax(), 'ds']
+            c4.metric("Time of Peak Load", peak_time.strftime("%A, %H:%00"))
+
+        with tab_main2:
+            col_chart1, col_chart2 = st.columns(2)
+            with col_chart1:
+                st.markdown("#### 📈 Multi-Year Growth Trend")
+                forecast['Year'] = forecast['ds'].dt.year
+                yearly_data = forecast.groupby('Year')['yhat'].mean().reset_index()
+                fig_trend = px.line(yearly_data, x='Year', y='yhat', markers=True, line_shape='spline')
+                fig_trend.update_traces(line_color='#007acc', line_width=3)
+                fig_trend.update_layout(yaxis_tickformat=',.0f', yaxis_title="Load (MW)")
+                st.plotly_chart(fig_trend, use_container_width=True)
+                
+            with col_chart2:
+                st.markdown("#### 🌦️ Seasonality (Summer vs Winter)")
+                forecast['Month'] = forecast['ds'].dt.month_name()
+                months_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+                monthly_data = forecast.groupby('Month')['yearly'].mean().reset_index()
+                monthly_data['Month'] = pd.Categorical(monthly_data['Month'], categories=months_order, ordered=True)
+                monthly_data = monthly_data.sort_values('Month')
+                fig_season = px.bar(monthly_data, x='Month', y='yearly', color='yearly', color_continuous_scale='RdBu_r')
+                fig_season.update_layout(showlegend=False, yaxis_tickformat=',.0f', yaxis_title="Load Variance (MW)")
+                st.plotly_chart(fig_season, use_container_width=True)
+
+            st.markdown("#### ⏱️ Weekly & Daily Load Patterns")
+            col_w1, col_w2 = st.columns(2)
+            with col_w1:
+                forecast['DayOfWeek'] = forecast['ds'].dt.day_name()
+                days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                weekly_data = forecast.groupby('DayOfWeek')['weekly'].mean().reset_index()
+                weekly_data['DayOfWeek'] = pd.Categorical(weekly_data['DayOfWeek'], categories=days_order, ordered=True)
+                weekly_data = weekly_data.sort_values('DayOfWeek')
+                fig_weekly = px.line(weekly_data, x='DayOfWeek', y='weekly', markers=True)
+                fig_weekly.update_traces(line_color='#2ca02c', line_width=3)
+                fig_weekly.update_layout(yaxis_title="Load Variance (MW)")
+                st.plotly_chart(fig_weekly, use_container_width=True)
+
+            with col_w2:
+                forecast['Hour'] = forecast['ds'].dt.hour
+                daily_data = forecast.groupby('Hour')['daily'].mean().reset_index()
+                fig_daily = px.area(daily_data, x='Hour', y='daily')
+                fig_daily.update_traces(line_color='#ff7f0e')
+                fig_daily.update_layout(xaxis=dict(tickmode='linear', dtick=2), yaxis_title="Load Variance (MW)")
+                st.plotly_chart(fig_daily, use_container_width=True)
+
+        with tab_main3:
+            st.markdown("### 📥 Export Predicted Data")
+            export_df = future_only[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].rename(columns={
+                'ds': 'Timestamp', 'yhat': 'Predicted_Load_MW', 'yhat_lower': 'Lower_Bound_MW', 'yhat_upper': 'Upper_Bound_MW'
+            })
+            st.dataframe(export_df.head(24), use_container_width=True)
+            csv = export_df.to_csv(index=False).encode('utf-8')
+            st.download_button(label="Download Full Forecast as CSV", data=csv, file_name='load_forecast.csv', mime='text/csv')
