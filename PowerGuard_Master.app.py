@@ -1374,6 +1374,19 @@ elif st.session_state['current_page'] == 'grid':
 
         with st.spinner("🧠 AI is calculating future capacity demands..."):
             future = m.make_future_dataframe(periods=days_to_forecast * 24, freq='h')
+            
+            # --- حقن درجات الحرارة آلياً حسب الشهر في الخلفية ليعمل الموديل ---
+            saudi_avg_temps = {
+                1: (22.0, 12.0), 2: (25.0, 14.0), 3: (30.0, 18.0), 
+                4: (35.0, 22.0), 5: (41.0, 26.0), 6: (45.0, 29.0), 
+                7: (47.0, 31.0), 8: (47.0, 31.0), 9: (43.0, 28.0), 
+                10: (37.0, 23.0), 11: (29.0, 18.0), 12: (24.0, 14.0)
+            }
+            future['Month_Num'] = future['ds'].dt.month
+            future['Temp_Max_Avg'] = future['Month_Num'].map(lambda x: saudi_avg_temps[x])
+            future['Temp_Min_Avg'] = future['Month_Num'].map(lambda x: saudi_avg_temps[x])
+            # ----------------------------------------------------------------
+
             forecast = m.predict(future)
             
             # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة إن أردنا
