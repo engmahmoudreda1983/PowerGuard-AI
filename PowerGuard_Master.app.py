@@ -1373,7 +1373,7 @@ elif st.session_state['current_page'] == 'grid':
             st.info(f"💡 The AI will simulate hourly loads for the next **{days_to_forecast} days**.")
 
         with st.spinner("🧠 AI is calculating future capacity demands..."):
-            future = m.make_future_dataframe(periods=days_to_forecast * 24, freq='H')
+            future = m.make_future_dataframe(periods=days_to_forecast * 24, freq='h')
             forecast = m.predict(future)
             
             # حفظ أقصى حمل متوقع في الذاكرة لتستخدمه باقي المنصة إن أردنا
