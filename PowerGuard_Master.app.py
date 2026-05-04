@@ -1260,8 +1260,8 @@ elif st.session_state['current_page'] == 'grid':
             }
             selected_profile = gulf_temps.get(selected_country, gulf_temps["Saudi Arabia"])
             
-            future['Temp_Max_Avg'] = future['Month_Num'].map(lambda x: selected_profile[x]).astype(float)
-            future['Temp_Min_Avg'] = future['Month_Num'].map(lambda x: selected_profile[x]).astype(float)
+            future['Temp_Max_Avg'] = future['Month_Num'].map(lambda x: selected_profile[x][0]).astype(float)
+            future['Temp_Min_Avg'] = future['Month_Num'].map(lambda x: selected_profile[x][1]).astype(float)
 
             forecast = m.predict(future)
             future_only = forecast.copy()
