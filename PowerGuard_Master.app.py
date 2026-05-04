@@ -17,9 +17,9 @@ from prophet.serialize import model_from_json
 # Suppress Version/Unpickling Warnings
 warnings.filterwarnings("ignore")
 
-# =========================================
+# ==========================================
 # 1. إعدادات الصفحة والتصميم الأساسي
-# =========================================
+# ==========================================
 st.set_page_config(page_title="PowerGuard AI Enterprise", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -41,9 +41,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# =========================================
+# ==========================================
 # 2. تحميل كل النماذج الذكية
-# =========================================
+# ==========================================
 @st.cache_resource
 def load_all_models():
     try:
@@ -66,9 +66,9 @@ def load_all_models():
 
 model_health, model_life, model_thermal, scaler1, model1, scaler2, model2, models_ready = load_all_models()
 
-# =========================================
+# ==========================================
 # 3. دوال مساعدة (Helper Functions)
-# =========================================
+# ==========================================
 def get_tx_confidence(model, input_df):
     try:
         preds = np.array(list((tree.predict(input_df.values).item() for tree in model.estimators_)))
@@ -117,7 +117,6 @@ def create_motor_gauge(value, title, color, max_v=100.0, h=250):
     fig.update_layout(height=h, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
-# دوال مساعدة لـ RelayGuard
 def highlight_relay_fmea(row):
     status = row.get('Status', '')
     if 'SAFE' in status: return tuple(('background-color: #E8F5E9; color: #00A65A; font-weight: bold',)) * len(row)
@@ -161,12 +160,11 @@ def create_relay_radar(probs_list, classes_tup, color):
     )
     return fig
 
-# =========================================
+# ==========================================
 # 4. إعداد متغيرات الجلسة (Session State)
-# =========================================
+# ==========================================
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'portal'
 
-# متغيرات المحولات والمحركات
 if 'tx_logged_in' not in st.session_state: st.session_state['tx_logged_in'] = False
 if 'motor_logged_in' not in st.session_state: st.session_state['motor_logged_in'] = False
 if 'fmea_log' not in st.session_state: 
@@ -178,25 +176,23 @@ if 'motor_faults' not in st.session_state: st.session_state.motor_faults = {'HDF
 if 'inspection_log' not in st.session_state: 
     st.session_state['inspection_log'] = pd.DataFrame(columns=list(('Timestamp', 'Asset', 'Risk Level', 'Primary FMEA', 'Status', 'Grade', 'Air Temp [K]', 'Core Temp [K]', 'RPM', 'Torque [Nm]', 'Wear [min]', 'Vib RMS', 'Vib Kurt')))
 
-# متغيرات المرحلات (RelayGuard)
 if 'relay_logged_in' not in st.session_state: st.session_state['relay_logged_in'] = False
 if 'relay_fmea_log' not in st.session_state:
     cols_fmea = ['Timestamp', 'Asset ID', 'Noise Index', 'Max Current (A)', 'Risk (%)', 'RPN', 'Status', 'Action']
     st.session_state['relay_fmea_log'] = pd.DataFrame(columns=cols_fmea)
 if 'relay_latest_eval' not in st.session_state: st.session_state['relay_latest_eval'] = None
 
-# متغيرات غرفة التحكم المركزية وتوقع الأحمال (الإضافة الجديدة)
 if 'master_logged_in' not in st.session_state: st.session_state['master_logged_in'] = False
-if 'grid_logged_in' not in st.session_state: st.session_state['grid_logged_in'] = False 
-if 'forecasted_peak' not in st.session_state: st.session_state['forecasted_peak'] = None 
+if 'grid_logged_in' not in st.session_state: st.session_state['grid_logged_in'] = False
+if 'forecasted_peak' not in st.session_state: st.session_state['forecasted_peak'] = None
 
 def go_to_portal():
     st.session_state['current_page'] = 'portal'
     st.rerun()
 
-# =========================================
+# ==========================================
 # 5. البوابة الرئيسية (Portal)
-# =========================================
+# ==========================================
 if st.session_state['current_page'] == 'portal':
     st.markdown("<br><br><h1 style='text-align: center; color: #0b2e59;'>⚡ PowerGuard AI Enterprise Portal</h1>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #666; margin-bottom: 40px;'>Enterprise Asset Performance Management System</h4>", unsafe_allow_html=True)
@@ -219,7 +215,7 @@ if st.session_state['current_page'] == 'portal':
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ Transformer Guard</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #4da6ff; height: 160px;'><h3>⚡ TransformerGuard AI</h3><p>DGA & Thermal Analytics</p></div>", unsafe_allow_html=True)
         if st.button("Launch Transformer Module", use_container_width=True):
             st.session_state['current_page'] = 'transformer'
             st.rerun()
@@ -293,20 +289,20 @@ elif st.session_state['current_page'] == 'transformer':
             col_in, col_out = st.columns(list((1, 2.2)))
             with col_in:
                 st.markdown("### 📊 DGA Parameters")
-                h2 = st.number_input("Hydrogen (H2)", value=5.0)
-                o2 = st.number_input("Oxygen (O2)", value=500.0)
-                n2 = st.number_input("Nitrogen (N2)", value=10000.0)
-                ch4 = st.number_input("Methane (CH4)", value=2.0)
-                co = st.number_input("Carbon Monoxide (CO)", value=100.0)
-                co2 = st.number_input("Carbon Dioxide (CO2)", value=300.0)
-                c2h4 = st.number_input("Ethylene (C2H4)", value=1.0)
-                c2h6 = st.number_input("Ethane (C2H6)", value=5.0)
-                c2h2 = st.number_input("Acetylene (C2H2)", value=0.0)
-                dbds = st.number_input("DBDS (ppm)", value=0.1)
-                pf = st.number_input("Power Factor (%)", value=0.05)
-                ift = st.number_input("Interfacial Tension", min_value=0.0, max_value=75.0, value=45.0)
-                dr = st.number_input("Dielectric Rigidity (kV)", value=70.0)
-                wc = st.number_input("Water Content (ppm)", value=2.0)
+                h2 = st.number_input("Hydrogen (H2)", value=5.0, help="Indicates partial discharge, electrolysis, or low-energy electrical faults.")
+                o2 = st.number_input("Oxygen (O2)", value=500.0, help="Indicates oxidation or air leak in the sealing system.")
+                n2 = st.number_input("Nitrogen (N2)", value=10000.0, help="Usually from atmosphere or inert gas blanket.")
+                ch4 = st.number_input("Methane (CH4)", value=2.0, help="Associated with low-temperature thermal faults in oil (<300°C).")
+                co = st.number_input("Carbon Monoxide (CO)", value=100.0, help="Key indicator of degradation of cellulose (paper) solid insulation.")
+                co2 = st.number_input("Carbon Dioxide (CO2)", value=300.0, help="Product of paper insulation aging and thermal degradation.")
+                c2h4 = st.number_input("Ethylene (C2H4)", value=1.0, help="Associated with high-temperature thermal faults in oil (>700°C).")
+                c2h6 = st.number_input("Ethane (C2H6)", value=5.0, help="Associated with medium-temperature thermal faults.")
+                c2h2 = st.number_input("Acetylene (C2H2)", value=0.0, help="Critical Alert: Indicates high-energy arcing or severe electrical sparking.")
+                dbds = st.number_input("DBDS (ppm)", value=0.1, help="Corrosive sulfur compound that can cause copper winding failure.")
+                pf = st.number_input("Power Factor (%)", value=0.05, help="Measures dielectric losses; higher values indicate degraded or contaminated oil.")
+                ift = st.number_input("Interfacial Tension", min_value=0.0, max_value=75.0, value=45.0, help="Lower values indicate presence of polar contaminants and oil oxidation.")
+                dr = st.number_input("Dielectric Rigidity (kV)", value=70.0, help="Breakdown voltage; measures the ability of oil to withstand electrical stress.")
+                wc = st.number_input("Water Content (ppm)", value=2.0, help="Moisture level; highly detrimental to paper insulation life and dielectric strength.")
 
             with col_out:
                 input_df = pd.DataFrame(list(((h2, o2, n2, ch4, co, co2, c2h4, c2h6, c2h2, dbds, pf, ift, dr, wc),)), 
@@ -384,16 +380,16 @@ elif st.session_state['current_page'] == 'transformer':
             st.markdown("### 🌡️ Thermal Load Predictive Analysis")
             col_t_in, col_t_out = st.columns(list((1, 1.5)))
             with col_t_in:
-                capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0)
+                capacity_kva = st.number_input("Rated Capacity (kVA)", min_value=10.0, value=50.0, help="Nameplate capacity of the transformer.")
                 c1, c2 = st.columns(2)
-                hour = c1.number_input("Hour (0-23)", min_value=0, max_value=23, value=14)
-                month = c2.number_input("Month (1-12)", min_value=1, max_value=12, value=7)
-                hufl = st.number_input("HUFL", value=12.5)
-                hull = st.number_input("HULL", value=3.2)
-                mufl = st.number_input("MUFL", value=8.1)
-                mull = st.number_input("MULL", value=1.5)
-                lufl = st.number_input("LUFL", value=4.5)
-                lull = st.number_input("LULL", value=0.8)
+                hour = c1.number_input("Hour (0-23)", min_value=0, max_value=23, value=14, help="Time of day, influences ambient load and temperature.")
+                month = c2.number_input("Month (1-12)", min_value=1, max_value=12, value=7, help="Month of the year, influences seasonal ambient temperature.")
+                hufl = st.number_input("HUFL", value=12.5, help="High Use Full Load - Represents peak load behavior from SCADA.")
+                hull = st.number_input("HULL", value=3.2, help="High Use Low Load")
+                mufl = st.number_input("MUFL", value=8.1, help="Medium Use Full Load")
+                mull = st.number_input("MULL", value=1.5, help="Medium Use Low Load")
+                lufl = st.number_input("LUFL", value=4.5, help="Low Use Full Load")
+                lull = st.number_input("LULL", value=0.8, help="Low Use Low Load")
                     
             with col_t_out:
                 total_active_load = hufl + mufl + lufl
@@ -469,18 +465,18 @@ elif st.session_state['current_page'] == 'transformer':
                     c_id1, c_id2 = st.columns(2)
                     tx_list = list((f"T{i:02d} (Substation Unit)" for i in range(1, 11)))
                     asset_selection = c_id1.selectbox("Select Asset:", tx_list)
-                    e_capacity = c_id2.number_input("Rated Capacity", min_value=10.0, value=50.0)
+                    e_capacity = c_id2.number_input("Rated Capacity", min_value=10.0, value=50.0, help="Nameplate capacity of the transformer.")
                     
-                    e_h2 = st.number_input("H2", value=5.0)
-                    e_ch4 = st.number_input("CH4", value=2.0)
-                    e_co = st.number_input("CO", value=100.0)
-                    e_co2 = st.number_input("CO2", value=300.0)
-                    e_c2h4 = st.number_input("C2H4", value=1.0)
-                    e_c2h2 = st.number_input("C2H2", value=0.0)
-                    e_dr = st.number_input("DR (kV)", value=70.0)
-                    e_wc = st.number_input("Water (ppm)", value=2.0)
-                    e_pf = st.number_input("Power Factor", value=0.05)
-                    e_ift = st.number_input("IFT", value=45.0)
+                    e_h2 = st.number_input("H2", value=5.0, help="Indicates partial discharge.")
+                    e_ch4 = st.number_input("CH4", value=2.0, help="Thermal faults <300°C.")
+                    e_co = st.number_input("CO", value=100.0, help="Paper insulation degradation.")
+                    e_co2 = st.number_input("CO2", value=300.0, help="Paper insulation aging.")
+                    e_c2h4 = st.number_input("C2H4", value=1.0, help="Thermal faults >700°C.")
+                    e_c2h2 = st.number_input("C2H2", value=0.0, help="High-energy arcing.")
+                    e_dr = st.number_input("DR (kV)", value=70.0, help="Dielectric Rigidity.")
+                    e_wc = st.number_input("Water (ppm)", value=2.0, help="Moisture content.")
+                    e_pf = st.number_input("Power Factor", value=0.05, help="Dielectric losses.")
+                    e_ift = st.number_input("IFT", value=45.0, help="Interfacial Tension.")
                     
                     c_o1, c_o2, c_o3 = st.columns(3)
                     e_hufl = c_o1.number_input("Total Load", value=12.0)
@@ -535,7 +531,7 @@ elif st.session_state['current_page'] == 'transformer':
                         'dga_input_df': dga_input, 'thermal_input_df': scada_input_norm
                     }
                     
-                    new_entry = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' '), 'RPN Level': rpn_level, 'Action Required': final_action},)))
+                    new_entry = pd.DataFrame(list(({'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Asset ID': asset_id, 'DGA Index': round(health_score, 1), 'Pred Temp': round(ot_temp, 1), 'Overall Risk (%)': round(overall_risk, 1), 'Status': final_status.split(' ')[1], 'RPN Level': rpn_level, 'Action Required': final_action},)))
                     st.session_state['fmea_log'] = pd.concat((st.session_state['fmea_log'], new_entry), ignore_index=True).tail(100)
                     
                     st.markdown(f"<h2 style='text-align: center; color: {final_color}; border: 2px solid {final_color}; padding: 10px; border-radius: 5px;'>{final_status}</h2>", unsafe_allow_html=True)
@@ -717,16 +713,16 @@ elif st.session_state['current_page'] == 'motor':
                 with c_in:
                     st.markdown("#### 🎛️ Live Sensor Telemetry")
                     motor_options = {'L (Low - Standard Build)': 0, 'M (Medium - Commercial)': 1, 'H (High - Industrial Grade)': 2}
-                    motor_type = st.selectbox("Motor Quality Grade", list(motor_options.keys()), index=1)
+                    motor_type = st.selectbox("Motor Quality Grade", list(motor_options.keys()), index=1, help="Higher build quality resists overstrain and thermal faults better.")
                     st.markdown("---")
                     st.markdown("#### 🌡️ Thermal Metrics")
-                    air_temp = st.number_input("Ambient Air Temp [K]", min_value=290.0, max_value=310.0, value=298.0, step=0.1)
-                    process_temp = st.number_input("Motor Core Temp [K]", min_value=300.0, max_value=320.0, value=308.0, step=0.1)
+                    air_temp = st.number_input("Ambient Air Temp [K]", min_value=290.0, max_value=310.0, value=298.0, step=0.1, help="Surrounding environment temperature.")
+                    process_temp = st.number_input("Motor Core Temp [K]", min_value=300.0, max_value=320.0, value=308.0, step=0.1, help="Internal operating temperature of the motor core.")
                     st.markdown("---")
                     st.markdown("#### ⚙️ Mechanical Metrics")
-                    rpm = st.slider("Rotational Speed [RPM]", 1100, 2900, 1500, 10)
-                    torque = st.slider("Applied Torque [Nm]", 10.0, 80.0, 40.0, 0.5)
-                    tool_wear = st.slider("Tool Wear Level [min]", 0, 260, 50, 1)
+                    rpm = st.slider("Rotational Speed [RPM]", 1100, 2900, 1500, 10, help="Shaft speed. High RPM increases mechanical wear.")
+                    torque = st.slider("Applied Torque [Nm]", 10.0, 80.0, 40.0, 0.5, help="Mechanical load twist force. Causes overstrain (OSF) if combined with high wear.")
+                    tool_wear = st.slider("Tool Wear Level [min]", 0, 260, 50, 1, help="Cumulative runtime/wear of the attached load. Causes Tool Wear Failure (TWF).")
                     
                 with c_out:
                     raw_df = pd.DataFrame({'Type': list((motor_options[motor_type],)), 'Air temperature [K]': list((air_temp,)), 'Process temperature [K]': list((process_temp,)), 'Rotational speed [rpm]': list((rpm,)), 'Torque [Nm]': list((torque,)), 'Tool wear [min]': list((tool_wear,))})
@@ -806,7 +802,7 @@ elif st.session_state['current_page'] == 'motor':
                 cv1, cv2 = st.columns(list((1.5, 1)))
                 with cv1:
                     st.markdown("#### 🎚️ Simulator & Key Metrics")
-                    sim_level = st.slider("Degradation Phase (%)", 0, 100, 10)
+                    sim_level = st.slider("Degradation Phase (%)", 0, 100, 10, help="Simulates the physical wear lifecycle of the bearing assembly from new (0%) to failure (100%).")
                     r_val = 0.05 + (sim_level/100.0)**2 * 0.20
                     k_val = 3.0 + (sim_level/100.0)**1.5 * 5.0
                     p2p_val = r_val * 4.5
@@ -943,10 +939,10 @@ elif st.session_state['current_page'] == 'relay':
                     st.markdown("### 📥 Telemetry Data")
                     asset_id = st.text_input("Asset ID / Station Name", value="SUB-RELAY-001")
                     
-                    noise_index = st.number_input("Pre-Fault Noise Index", value=0.05, step=0.01)
-                    fault_current = st.number_input("Max Fault Current (A)", value=1500, step=100)
-                    age_months = st.number_input("Relay Age (Months)", value=192, step=12)
-                    alarms_count = st.number_input("Internal Alarms Count", value=0, step=1)
+                    noise_index = st.number_input("Pre-Fault Noise Index (Signal Fluctuation)", value=0.05, step=0.01, help="❓ Measures signal noise before a fault. Values > 1.5 strongly indicate hardware deterioration in the Analog Card.")
+                    fault_current = st.number_input("Max Fault Current (A)", value=1500, step=100, help="❓ The peak current recorded. Values > 5000A start adding physical stress penalties to the final risk score.")
+                    age_months = st.number_input("Relay Age (Months)", value=192, step=12, help="❓ Relays older than 120 months (10 Years) receive an automatic +5% risk penalty for every additional year.")
+                    alarms_count = st.number_input("Internal Alarms Count", value=0, step=1, help="❓ Internal self-test failures. Each alarm adds an automatic +1% risk penalty to the assessment.")
                     
                     run_btn = st.form_submit_button("🔍 Run Hybrid AI Analysis", use_container_width=True, type="primary")
 
@@ -1012,9 +1008,9 @@ elif st.session_state['current_page'] == 'relay':
                             
                             rpn_score = int(final_risk * 10)
                             
-                            if final_risk < 30: status, color, action, rpn_level = "🟢 SAFE", "#2ecc71", "Normal operation.", "Low"
-                            elif final_risk < 70: status, color, action, rpn_level = "🟡 WARNING", "#f1c40f", f"Schedule CBM inspection.", "Medium"
-                            else: status, color, action, rpn_level = "🔴 DANGER", "#e74c3c", f"Urgent replacement required.", "Critical"
+                            if final_risk < 30: status, color, action, rpn_level = "🟢 SAFE", "#2ecc71", "Normal operation. Maintain TBM schedule.", "Low"
+                            elif final_risk < 70: status, color, action, rpn_level = "🟡 WARNING", "#f1c40f", f"Schedule CBM inspection focusing on {mode}.", "Medium"
+                            else: status, color, action, rpn_level = "🔴 DANGER", "#e74c3c", f"Urgent replacement required due to {mode}.", "Critical"
 
                             m1, m2, m3, m4 = st.columns(list((1, 1, 1, 1)))
                             m1.metric("🤖 Hybrid Confidence", f"{ai_confidence:.1f}%")
@@ -1030,16 +1026,16 @@ elif st.session_state['current_page'] == 'relay':
                             st.session_state['relay_fmea_log'] = pd.concat((new_log, st.session_state['relay_fmea_log']), ignore_index=True).head(100)
                             
                             ai_reasons_clean = ""
-                            if final_risk < 30: ai_reasons_clean = "Analysis indicates healthy telemetry."
+                            if final_risk < 30: ai_reasons_clean = "Analysis indicates healthy telemetry. All parameters are within safe operational thresholds."
                             else:
                                 issues = list()
-                                if age_penalty > 0: issues.append(f"significant operating age")
-                                if alarm_penalty > 0: issues.append(f"internal hardware alarms")
-                                if current_penalty > 0: issues.append(f"high fault current exposure")
-                                if ai_base_risk > 30 and noise_index > 1.0: issues.append(f"elevated signal noise")
+                                if age_penalty > 0: issues.append(f"significant operating age ({age_months} months)")
+                                if alarm_penalty > 0: issues.append(f"internal hardware alarms ({alarms_count} events)")
+                                if current_penalty > 0: issues.append(f"high fault current exposure ({fault_current}A)")
+                                if ai_base_risk > 30 and noise_index > 1.0: issues.append(f"elevated signal noise ({noise_index})")
                                 
-                                if issues: ai_reasons_clean = f"Elevated failure risk primarily driven by " + ", and ".join(issues) + "."
-                                else: ai_reasons_clean = f"System detected an anomaly resulting in a {final_risk:.1f}% risk score."
+                                if issues: ai_reasons_clean = f"The Hybrid Expert System detected an elevated failure risk ({final_risk:.1f}%) primarily driven by " + ", and ".join(issues) + "."
+                                else: ai_reasons_clean = f"The system detected an anomaly resulting in a {final_risk:.1f}% risk score."
                             
                             st.session_state['relay_latest_eval'] = {'id': asset_id, 'risk': final_risk, 'status': status, 'color': color, 'mode': mode, 'action': action, 'probs': final_probs_list, 'classes': plot_classes, 'reasoning': ai_reasons_clean, 'rpn_score': rpn_score, 'rpn_level': rpn_level}
 
@@ -1051,30 +1047,86 @@ elif st.session_state['current_page'] == 'relay':
                                 fig_p.update_layout(showlegend=False, height=250, margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Probability", yaxis_title="")
                                 st.plotly_chart(fig_p, use_container_width=True)
 
+                            st.markdown("---")
+                            st.markdown("#### 📉 Component Stress Analysis")
+                            noise_stress = min(150.0, (float(noise_index) / 1.5) * 100.0)
+                            curr_stress = min(150.0, (float(fault_current) / 8000.0) * 100.0)
+                            age_stress = min(150.0, (float(age_months) / 240.0) * 100.0)
+                            alarm_stress = min(150.0, (float(alarms_count) / 10.0) * 100.0)
+                            
+                            stress_names = list(("Noise Fluctuation", "Current Overload", "Age Wear", "Internal Alarms"))
+                            stress_vals = list((noise_stress, curr_stress, age_stress, alarm_stress))
+                            stress_colors = list(('#9b59b6', '#e74c3c', '#34495e', '#f39c12'))
+                            
+                            fig_stress = px.bar(x=stress_vals, y=stress_names, orientation='h', color=stress_names, color_discrete_sequence=stress_colors)
+                            fig_stress.add_vline(x=100, line_dash="dash", line_color="red", annotation_text="Critical Limit")
+                            fig_stress.update_layout(showlegend=False, height=250, margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Stress Factor (%)", yaxis_title="")
+                            st.plotly_chart(fig_stress, use_container_width=True)
+
                         except Exception as e: st.error(f"Analysis failed: {str(e)}")
-                else: st.info("💡 Input data and click 'Run' to start.")
+                else: st.info("💡 Please input telemetry data and click 'Run Hybrid AI Analysis' to start.")
 
         with tab2:
             st.markdown("### 📑 RPN & FMEA History Registry")
             fmea_df = st.session_state['relay_fmea_log']
             if not fmea_df.empty: st.dataframe(fmea_df.style.apply(highlight_relay_fmea, axis=1), use_container_width=True, hide_index=True)
+            else: st.info("No records available. Run an assessment to populate the database.")
 
         with tab3:
             eval_data = st.session_state['relay_latest_eval']
             if eval_data:
                 rep_color = eval_data.get('color')
-                st.markdown(f"### 📄 Executive Report: `{eval_data.get('id')}`")
+                st.markdown(f"### 📄 Comprehensive Hybrid AI Executive Report")
+                st.markdown(f"**Asset Designation:** `{eval_data.get('id')}` | **Assessment Time:** `{datetime.now().strftime('%Y-%m-%d %H:%M')}`")
+                st.markdown("---")
                 
                 rep_col1, rep_col2 = st.columns(list((1, 1)))
                 with rep_col1:
+                    st.markdown("#### 🎯 Diagnostic Summary")
                     st.info(f"**Overall Health Index:** {100-eval_data.get('risk'):.1f}%")
-                    st.warning(f"**Action:** {eval_data.get('action')}")
-                    st.markdown(f"**FMEA RPN:** `{eval_data.get('rpn_score')}/1000`")
+                    
+                    if eval_data.get('risk') < 30:
+                        st.success(f"**Predicted Failure Mode:** {eval_data.get('mode')}")
+                        st.success(f"✅ **{eval_data.get('action')}**")
+                    elif eval_data.get('risk') < 70:
+                        st.warning(f"**Predicted Failure Mode:** {eval_data.get('mode')}")
+                        st.warning(f"⚠️ **{eval_data.get('action')}**")
+                    else:
+                        st.error(f"**Predicted Failure Mode:** {eval_data.get('mode')}")
+                        st.error(f"🚨 **{eval_data.get('action')}**")
+                    
+                    st.markdown(f"**FMEA RPN (Risk Priority Number):** `{eval_data.get('rpn_score')}/1000` ({eval_data.get('rpn_level')} Severity)")
+                    st.markdown("#### 🧠 Expert System Reasoning")
                     st.markdown(f"<div class='report-reasoning'>{eval_data.get('reasoning')}</div>", unsafe_allow_html=True)
 
                 with rep_col2:
+                    st.markdown("#### 📡 Multidimensional Hybrid Radar")
                     st.plotly_chart(create_relay_radar(eval_data.get('probs'), eval_data.get('classes'), rep_color), use_container_width=True)
                     
+                    st.markdown("#### 📈 Actual Historical Risk Trend")
+                    log_df = st.session_state['relay_fmea_log']
+                    curr_id = eval_data.get('id')
+                    
+                    time_vals, risk_vals, status_vals = list(), list(), list()
+                    for _, rec in log_df.iterrows():
+                        if rec['Asset ID'] == curr_id:
+                            time_vals.append(rec['Timestamp'])
+                            risk_vals.append(rec['Risk (%)'])
+                            status_vals.append(rec['Status'].replace("🟢", "").replace("🟡", "").replace("🔴", "").strip())
+                    
+                    time_vals.reverse()
+                    risk_vals.reverse()
+                    status_vals.reverse()
+                    
+                    if len(time_vals) > 0:
+                        trend_fig = go.Figure()
+                        trend_fig.add_trace(go.Scatter(x=time_vals, y=risk_vals, mode='lines+markers', line=dict(color=rep_color, width=3), marker=dict(size=8, color=rep_color), text=status_vals, hovertemplate="Time: %{x}<br>Risk: %{y}%<br>Status: %{text}<extra></extra>"))
+                        trend_fig.update_layout(height=250, margin=dict(l=0, r=0, t=30, b=0), yaxis_title="Risk (%)", xaxis_title="Historical Assessments")
+                        st.plotly_chart(trend_fig, use_container_width=True)
+                    else: st.info("📊 Run at least one assessment to view the historical trend.")
+                    
+            else: st.info("💡 Run an evaluation in the Diagnostic Dashboard to generate the Executive Report.")
+
 # ==============================================================================
 # 9. المحطة الشاملة (SubstationGuard AI)
 # ==============================================================================
@@ -1084,8 +1136,9 @@ elif st.session_state['current_page'] == 'substation':
         st.markdown("<br><br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(list((1, 2, 1)))
         with col2:
-            st.markdown("<div style='background: linear-gradient(135deg, #0b2e59 0%, #1a5276 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin-bottom: 20px;'><h2 style='margin:0;'>🌐 SubstationGuard AI</h2></div>", unsafe_allow_html=True)
+            st.markdown("<div style='background: linear-gradient(135deg, #0b2e59 0%, #1a5276 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin-bottom: 20px;'><h2 style='margin:0;'>🌐 SubstationGuard AI</h2><p style='margin:0; font-size:14px; color:#aaa;'>Enterprise Command Center Login</p></div>", unsafe_allow_html=True)
             with st.form("master_login_form"):
+                st.warning("🔒 Restricted C-Level Access. Authorized Personnel Only.")
                 user = st.text_input("Admin Username")
                 pwd = st.text_input("Admin Password", type="password")
                 if st.form_submit_button("Authenticate", use_container_width=True):
@@ -1105,18 +1158,23 @@ elif st.session_state['current_page'] == 'substation':
         st.markdown("""
         <div style='background: linear-gradient(135deg, #111 0%, #222 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-bottom: 4px solid #00ff88;'>
             <h1 style='color: #00ff88; text-align: center; margin: 0; font-family: "Courier New", Courier, monospace;'>🌐 SUBSTATION DIGITAL TWIN</h1>
+            <p style='color: #aaa; text-align: center; margin: 5px 0 0 0;'>System-of-Systems Comprehensive Monitoring</p>
         </div>
         """, unsafe_allow_html=True)
 
-        tx_risk = float(st.session_state['latest_eval'].get('overall_risk', 0.0)) if st.session_state.get('latest_eval') else 0.0
-        
+        tx_risk = 0.0
+        if st.session_state.get('latest_eval'):
+            tx_risk = float(st.session_state['latest_eval'].get('overall_risk', 0.0))
+
         motor_sys_risk = 0.0
         if st.session_state.get('motor_risk') or st.session_state.get('bearing_risk'):
             m_r = float(st.session_state.get('motor_risk', 0.0)) / 100.0
             b_r = float(st.session_state.get('bearing_risk', 0.0)) / 100.0
             motor_sys_risk = (1.0 - ((1.0 - m_r) * (1.0 - b_r))) * 100.0
 
-        relay_risk = float(st.session_state['relay_latest_eval'].get('risk', 0.0)) if st.session_state.get('relay_latest_eval') else 0.0
+        relay_risk = 0.0
+        if st.session_state.get('relay_latest_eval'):
+            relay_risk = float(st.session_state['relay_latest_eval'].get('risk', 0.0))
 
         rel_tx = 1.0 - (tx_risk / 100.0)
         rel_mo = 1.0 - (motor_sys_risk / 100.0)
@@ -1126,10 +1184,11 @@ elif st.session_state['current_page'] == 'substation':
         global_health = 100.0 - global_risk
 
         if global_risk == 0:
-            st.info("💡 Plant Data Empty: Please run evaluations in the Transformer, Motor, and Relay modules first.")
+            st.info("💡 Plant Data Empty: Please run evaluations in the Transformer, Motor, and Relay modules first to generate the Global Dashboard.")
         else:
             risks_dict = {'Transformer Unit': tx_risk, 'Motor System': motor_sys_risk, 'Protection Relay': relay_risk}
             weakest_link = max(risks_dict, key=risks_dict.get)
+            max_risk_val = risks_dict[weakest_link]
 
             c1, c2, c3, c4 = st.columns(4)
             c1.markdown(f"<div class='metric-card' style='border-left-color:#00ff88; background:#111; color:white;'><h4>Global Plant Health</h4><h1 style='color:#00ff88; margin:0;'>{global_health:.1f}%</h1></div>", unsafe_allow_html=True)
@@ -1142,30 +1201,106 @@ elif st.session_state['current_page'] == 'substation':
 
             st.markdown("---")
 
+            v_col1, v_col2, v_col3 = st.columns(list((1, 1, 1.5)))
+            
+            with v_col1:
+                st.markdown("#### 🚨 Cascading Risk Score")
+                fig_sub_gauge = go.Figure(go.Indicator(
+                    mode="gauge+number", value=float(global_risk),
+                    number={'suffix': "%", 'font': {'size': 30, 'color': action_color}},
+                    gauge={
+                        'axis': {'range': list((0, 100)), 'tickwidth': 1},
+                        'bar': {'color': action_color},
+                        'bgcolor': "white",
+                        'steps': list((
+                            {'range': list((0, 30)), 'color': 'rgba(46, 204, 113, 0.2)'},
+                            {'range': list((30, 70)), 'color': 'rgba(241, 196, 15, 0.2)'},
+                            {'range': list((70, 100)), 'color': 'rgba(231, 76, 60, 0.2)'}
+                        )),
+                        'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': float(global_risk)}
+                    }
+                ))
+                fig_sub_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=30, b=20), paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_sub_gauge, use_container_width=True)
+
+            with v_col2:
+                st.markdown("#### 🕸️ Topology Risk Radar")
+                fig_radar = go.Figure(data=go.Scatterpolar(
+                    r=list((tx_risk, motor_sys_risk, relay_risk, tx_risk)),
+                    theta=list(('Transformer', 'Motor', 'Relay', 'Transformer')),
+                    fill='toself', line_color='#e74c3c', fillcolor='rgba(231, 76, 60, 0.4)'
+                ))
+                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=list((0, 100)))), showlegend=False, height=300, margin=dict(l=30, r=30, t=30, b=30), paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_radar, use_container_width=True)
+
+            with v_col3:
+                st.markdown("#### 📊 Component Health Breakdown")
+                df_sys = pd.DataFrame({
+                    'Asset Category': list(('Transformer', 'Motor', 'Relay')),
+                    'Health %': list((100.0-tx_risk, 100.0-motor_sys_risk, 100.0-relay_risk)),
+                    'Risk %': list((tx_risk, motor_sys_risk, relay_risk))
+                })
+                fig_sys = px.bar(df_sys, x="Asset Category", y=list(("Health %", "Risk %")), color_discrete_sequence=list(('#2ecc71', '#e74c3c')))
+                fig_sys.update_layout(height=300, barmode='stack', margin=dict(t=30, b=10), yaxis_title="Status (%)", xaxis_title="")
+                st.plotly_chart(fig_sys, use_container_width=True)
+
+            st.markdown("---")
+
+            st.markdown("### 📋 Master Plant FMEA Registry (Holistic View)")
+            tx_eval = st.session_state.get('latest_eval', {})
+            re_eval = st.session_state.get('relay_latest_eval', {})
+            master_fmea = pd.DataFrame({
+                'Asset Module': list(('Transformer Unit (Power)', 'Motor Assembly (Motion)', 'Protection Relay (Control)')),
+                'Current Risk': list((f"{tx_risk:.1f}%", f"{motor_sys_risk:.1f}%", f"{relay_risk:.1f}%")),
+                'System Status': list((
+                    "🔴 DANGER" if tx_risk >= 70 else ("🟡 WARNING" if tx_risk >= 35 else "🟢 SAFE"),
+                    "🔴 DANGER" if motor_sys_risk >= 75 else ("🟡 WARNING" if motor_sys_risk >= 40 else "🟢 SAFE"),
+                    "🔴 DANGER" if relay_risk >= 70 else ("🟡 WARNING" if relay_risk >= 30 else "🟢 SAFE")
+                )),
+                'AI Prescribed Action': list((
+                    tx_eval.get('action', 'Monitor') if tx_eval else "Monitor",
+                    "Schedule Mechanical Check" if motor_sys_risk > 40 else "Monitor",
+                    re_eval.get('action', 'Monitor') if re_eval else "Monitor"
+                ))
+            })
+            st.dataframe(master_fmea.style.apply(highlight_fmea, axis=1), use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+
             st.markdown("### 🧠 C-Level Executive AI Briefing")
             
             if global_risk < 30:
                 exec_color = "#2ecc71"
                 action_badge = "🟢 CONTINUE NORMAL PRODUCTION"
-                overall_point = f"System is operating optimally with Health Index of **{global_health:.1f}%**."
+                overall_point = f"**Overall System Status:** The substation is operating optimally with a robust Global Health Index of **{global_health:.1f}%**. No cascading failure threats are currently detected."
             elif global_risk < 70:
                 exec_color = "#f1c40f"
                 action_badge = "🟡 SCHEDULE TARGETED MAINTENANCE"
-                overall_point = f"System exhibits moderate risk of **{global_risk:.1f}%**."
+                overall_point = f"**Overall System Status:** The plant exhibits a moderate cascading failure risk of **{global_risk:.1f}%**. Proactive interventions are required to prevent further degradation."
             else:
                 exec_color = "#e74c3c"
                 action_badge = "🔴 URGENT SYSTEM INTERVENTION REQUIRED"
-                overall_point = f"CRITICAL ALERT. System faces imminent threat (Risk: **{global_risk:.1f}%**)."
+                overall_point = f"**Overall System Status:** CRITICAL ALERT. The substation faces an imminent threat of cascading failure (Risk: **{global_risk:.1f}%**), threatening a potential plant-wide blackout."
+
+            tx_str = f"Stable (Risk: {tx_risk:.1f}%)" if tx_risk < 35 else (f"Elevated (Risk: {tx_risk:.1f}%)" if tx_risk < 70 else f"Critical (Risk: {tx_risk:.1f}%)")
+            mo_str = f"Stable (Risk: {motor_sys_risk:.1f}%)" if motor_sys_risk < 40 else (f"Elevated (Risk: {motor_sys_risk:.1f}%)" if motor_sys_risk < 75 else f"Critical (Risk: {motor_sys_risk:.1f}%)")
+            re_str = f"Stable (Risk: {relay_risk:.1f}%)" if relay_risk < 30 else (f"Elevated (Risk: {relay_risk:.1f}%)" if relay_risk < 70 else f"Critical (Risk: {relay_risk:.1f}%)")
 
             st.markdown(f"""
             <div style='background-color: {exec_color}10; padding: 25px; border-radius: 10px; border-left: 8px solid {exec_color}; border-right: 1px solid #ddd; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd;'>
                 <h3 style='color: {exec_color}; margin-top: 0; font-weight: bold;'>{action_badge}</h3>
                 <ul style='font-size: 18px; color: #333; line-height: 1.8; margin-bottom: 20px;'>
                     <li>{overall_point}</li>
+                    <li>⚡ <b>Transformer Assets:</b> {tx_str}.</li>
+                    <li>⚙️ <b>Motor & Motion Assets:</b> {mo_str}.</li>
+                    <li>🛡️ <b>Protection Relays:</b> {re_str}.</li>
                 </ul>
+                <div style='background-color: #fff; padding: 15px; border-radius: 5px; border: 1px dashed {exec_color};'>
+                    <strong>🎯 AI Strategic Directive:</strong> The primary bottleneck threatening plant stability is the <b>{weakest_link}</b>. Focus immediate predictive maintenance efforts and resource allocation on this asset to restore full system integrity.
+                </div>
             </div>
             """, unsafe_allow_html=True)
-
+            
             # --- التقرير العام المدمج مع توقع الأحمال ---
             if st.session_state.get('forecasted_peak'):
                 peak_val = st.session_state['forecasted_peak']
@@ -1190,15 +1325,37 @@ elif st.session_state['current_page'] == 'substation':
                         <strong style='color: #856404;'>⚠️ Critical Synergy Alert:</strong> The predicted load coincides with elevated Transformer Risk. Immediate initiation of auxiliary cooling protocols is recommended prior to the predicted peak.
                     </div>
                     """, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            report_txt = f"SUBSTATION DIGITAL TWIN - EXECUTIVE REPORT\n"
+            report_txt += f"=============================================\n"
+            report_txt += f"Assessment Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            report_txt += f"Global Plant Health: {global_health:.1f}%\n"
+            report_txt += f"Cascading Failure Risk: {global_risk:.1f}%\n"
+            report_txt += f"Primary Bottleneck: {weakest_link}\n"
+            report_txt += f"AI Directive: {action_text}\n"
+            report_txt += f"---------------------------------------------\n"
+            report_txt += f"ASSET RISK BREAKDOWN:\n"
+            report_txt += f"- Transformer Unit (Power): {tx_risk:.1f}%\n"
+            report_txt += f"- Motor Assembly (Motion): {motor_sys_risk:.1f}%\n"
+            report_txt += f"- Protection Relay (Control): {relay_risk:.1f}%\n"
+            report_txt += f"---------------------------------------------\n"
+            report_txt += f"EXECUTIVE BRIEFING:\n"
+            report_txt += f"{overall_point.replace('**', '').replace('<b>', '').replace('</b>', '')}\n"
+            report_txt += f"- Transformer Assets: {tx_str}\n"
+            report_txt += f"- Motor & Motion Assets: {mo_str}\n"
+            report_txt += f"- Protection Relays: {re_str}\n"
+            
+            st.download_button("📥 Download Official Substation Report (TXT)", data=report_txt, file_name=f"Substation_Report_{datetime.now().strftime('%Y%m%d')}.txt", use_container_width=True)
 
 # ==============================================================================
-# 10. توقع الأحمال (GridGuard AI)
+# 10. الوحدة الإضافية: توقع الأحمال (GridGuard AI)
 # ==============================================================================
 elif st.session_state['current_page'] == 'grid':
     if not st.session_state['grid_logged_in']:
         if st.button("⬅️ Back to Portal"): go_to_portal()
         st.markdown("<br><br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 1.2, 1])
+        col1, col2, col3 = st.columns(list((1, 1.2, 1)))
         with col2:
             st.markdown("<div style='background-color: #007acc; padding: 20px; border-radius: 10px; text-align: center; color: white;'><h2 style='margin:0;'>🌍 GridGuard AI</h2><p style='margin:0;'>Capacity Planning & Load Forecasting</p></div><br>", unsafe_allow_html=True)
             with st.form("grid_login_form"):
@@ -1211,7 +1368,7 @@ elif st.session_state['current_page'] == 'grid':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns([10, 1])
+        col_l, col_r = st.columns(list((10, 1)))
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
@@ -1349,7 +1506,6 @@ elif st.session_state['current_page'] == 'grid':
             export_df = future_only[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].rename(columns={
                 'ds': 'Timestamp', 'yhat': 'Predicted_Load_MW', 'yhat_lower': 'Lower_Bound_MW', 'yhat_upper': 'Upper_Bound_MW'
             })
-            # تم حذف .head(24) ليتم عرض الجدول بالكامل بناءً على التاريخ
             st.dataframe(export_df, use_container_width=True)
             csv = export_df.to_csv(index=False).encode('utf-8')
             st.download_button(label="Download Full Forecast as CSV", data=csv, file_name='load_forecast.csv', mime='text/csv')
