@@ -1211,7 +1211,7 @@ elif st.session_state['current_page'] == 'grid':
                         st.rerun()
                     else: st.error("❌ Invalid Credentials")
     else:
-        col_l, col_r = st.columns()
+        col_l, col_r = st.columns([10, 1])
         with col_l:
             if st.button("⬅️ Portal"): go_to_portal()
         with col_r:
