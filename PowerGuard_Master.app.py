@@ -237,7 +237,7 @@ if st.session_state['current_page'] == 'portal':
             st.rerun()
 
     st.markdown("<hr style='margin-top:20px; margin-bottom:20px;'>", unsafe_allow_html=True)
-    col_g1, col_g2, col_g3 = st.columns()
+    col_g1, col_g2, col_g3 = st.columns([1, 2, 1])
     with col_g2:
         st.markdown("<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border-top: 5px solid #007acc;'><h3>🌍 GridGuard AI</h3><p>Capacity Planning & Load Forecasting</p></div>", unsafe_allow_html=True)
         if st.button("Launch Grid Forecasting Module", use_container_width=True):
