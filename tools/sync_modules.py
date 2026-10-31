@@ -1,6 +1,6 @@
 """Copy the PowerGuard AI modules from their own repositories into this platform and adapt them to run as pages.
 
-    python tools/sync_modules.py            (expects the module repositories next to this one)
+    python tools/sync_modules.py [module ...]   (expects the module repositories next to this one)
 
 Each module keeps its own code; the copy only
   * drops st.set_page_config (the platform sets it once),
@@ -24,6 +24,7 @@ MODULES = {
     'motorguard': ('motorguard_ai', 'MotorGuard_AI.app.py', ['motorguard_core.py', 'thermal_model.pkl']),
     'relayguard': ('relayguard_ai', 'RelayGuard_AI.app.py', ['relayguard_core.py', 'omicron_report.py', 'report_pdf.py', 'record_anomaly_model.pkl']),
     'faultguard': ('faultguard_ai', 'FaultGuard_AI.app.py', ['faultguard_core.py', 'report_pdf.py', 'faultguard_model.pkl']),
+    'networkguard': ('networkguard_ai', 'NetworkGuard_AI.app.py', ['networkguard_core.py', 'networkguard_plots.py', 'report_pdf.py']),
 }
 SHARED = [('relayguard_ai', 'comtrade_features.py')]
 
@@ -33,7 +34,7 @@ def patch(text, key):
     text = text.replace("Image.open('logo.png')", 'Image.open(pg_paths.LOGO)')
     text = re.sub(r"(joblib\.load|open|load_model|load_record_model)\('([\w]+\.pkl)'", r"\1(pg_paths.model('\2')", text)
     text = re.sub(r'^import report_pdf as', f'import {key}_report_pdf as', text, flags=re.M)
-    text = text.replace('if st.button("Logout 🚪"):', 'if False:  # sign out is in the platform sidebar')
+    text = text.replace('if st.button("Logout 🚪"):', 'if False:  # sign out is in the platform header and sidebar')
     text = text.replace('<h1>⚡ Transformer & Reactor Guard AI</h1>', '<h1>⚡ TransformerGuard AI: Transformer and Reactor Health</h1>')
     if 'pg_paths.' in text and 'import pg_paths' not in text:
         text = re.sub(r'^import streamlit as st\s*$', 'import streamlit as st\nimport pg_paths', text, count=1, flags=re.M)
@@ -42,9 +43,11 @@ def patch(text, key):
     return text
 
 
-def main():
+def main(only=None):
     dst_root = os.path.join(ROOT, 'modules')
     for key, (repo, app, files) in MODULES.items():
+        if only and key not in only:
+            continue
         src = os.path.join(SRC, repo)
         if not os.path.isdir(src):
             sys.exit(f'missing repository folder: {src}')
@@ -70,4 +73,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:] or None)   # e.g. python tools/sync_modules.py networkguard

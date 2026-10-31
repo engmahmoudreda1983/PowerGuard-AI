@@ -93,7 +93,7 @@ if not st.session_state['logged_in']:
 # ==========================================
 _, col_r = st.columns([10, 1])
 with col_r:
-    if False:  # sign out is in the platform sidebar
+    if False:  # sign out is in the platform header and sidebar
         st.session_state['logged_in'] = False
         st.rerun()
 

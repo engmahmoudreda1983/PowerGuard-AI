@@ -1,3 +1,4 @@
+import hmac
 import io
 import zipfile
 from datetime import datetime
@@ -12,6 +13,7 @@ import networkguard_core as ng
 import networkguard_plots as npl
 import networkguard_report_pdf as pdfrep
 
+pass  # page config is set once by the PowerGuard AI platform
 STRETCH = 'stretch'
 NAVY, BLUE = '#0b2e59', '#4da6ff'
 GREEN, AMBER, RED = '#1a9e5c', '#d99a00', '#d63a3a'
@@ -59,6 +61,45 @@ def logo_b64():
     except Exception:
         return None
 
+
+def secrets_ok():
+    try:
+        return "APP_USERNAME" in st.secrets and "APP_PASSWORD" in st.secrets
+    except Exception:
+        return False
+
+
+# ==========================================
+# --- Login ---
+# ==========================================
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+
+if not st.session_state['logged_in']:
+    st.markdown("<br><br><h1 style='text-align:center;color:#4da6ff;'>⚡ NetworkGuard AI Login</h1>", unsafe_allow_html=True)
+    _, col2, _ = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            st.warning("🔒 Restricted Access. Authorized Personnel Only.")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Secure Login", width=STRETCH):
+                if not secrets_ok():
+                    st.error("Login is not configured: add APP_USERNAME and APP_PASSWORD to the app's Secrets.")
+                elif hmac.compare_digest(username, st.secrets["APP_USERNAME"]) and \
+                        hmac.compare_digest(password, st.secrets["APP_PASSWORD"]):
+                    st.session_state['logged_in'] = True
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid Username or Password")
+    st.markdown(FOOTER, unsafe_allow_html=True)
+    st.stop()
+
+_, col_r = st.columns([10, 1])
+with col_r:
+    if False:  # sign out is in the platform header and sidebar
+        st.session_state['logged_in'] = False
+        st.rerun()
 
 _logo = logo_b64()
 st.markdown(f"""

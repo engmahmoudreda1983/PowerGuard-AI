@@ -112,4 +112,15 @@ with st.sidebar:
         st.rerun()
     st.markdown("<div style='font-size:.7rem;color:#7f9cc6;margin-top:8px'>v1.0 · © 2026 PowerGuard AI</div>", unsafe_allow_html=True)
 
+
+# sign out at the top of every page (the sidebar can be closed, on phones it is hidden)
+_l, _r = st.columns([6, 1.3])
+with _r:
+    with st.popover(f'👤 {user}', width='stretch'):
+        st.caption('PowerGuard AI · Asset Intelligence Platform')
+        if st.button('Sign out', icon=':material/logout:', width='stretch', type='primary', key='pg_logout_top'):
+            ss['logged_in'] = False
+            ss.pop('_pg_store', None)
+            st.rerun()
+
 nav.run()
