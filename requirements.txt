@@ -1,7 +1,14 @@
-streamlit
+streamlit>=1.50
 pandas
 numpy
 plotly
-scikit-learn
+scikit-learn==1.9.1
 joblib
+matplotlib
+reportlab
+pypdf
+pypdfium2
+pytesseract
+openpyxl
+pillow
 prophet
