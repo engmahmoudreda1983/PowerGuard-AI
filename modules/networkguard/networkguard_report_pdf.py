@@ -108,6 +108,48 @@ def _tcc_mpl(relays, faults):
     return fig
 
 
+VERIF_TEXT = [
+    ('Purpose', 'This document shows that the NetworkGuard AI calculation engine gives the results published for standard test systems and '
+                'the results of the standard formulas. It checks the engine, not a particular network: the results of a network study depend on '
+                'the equipment data entered for that network.'),
+    ('Load flow', 'Newton-Raphson load flow of the IEEE 9-bus (Anderson and Fouad) and IEEE 14-bus test systems, compared with their published '
+                  'solutions (bus voltage magnitudes and angles).'),
+    ('Short circuit', "IEC 60909 equivalent voltage source method: a 400 kV grid of 20 000 MVA (R/X 0.1, X0/X1 1.0, R0/X0 0.1) feeding a 100 km line "
+                      "(R1 0.03, X1 0.32, R0 0.2, X0 0.9 ohm/km). Ik3'' = c·Un/(√3·|Z1|), Ik1'' = √3·c·Un/|2Z1 + Z0|, ip = κ·√2·Ik3'' with "
+                      "κ = 1.02 + 0.98·e^(-3R/X), c = 1.1, computed by hand and compared."),
+    ('IEC TR 60909-4 example', 'The example network of IEC TR 60909-4 (data for calculations according to IEC 60909): 380/110/30/10 kV with two '
+                               'network feeders, two-winding and three-winding transformers, power station units with generators, asynchronous '
+                               'motors and overhead lines and cables. The three-phase (maximum and minimum) and two-phase initial short-circuit '
+                               "currents Ik'', the peak currents ip (method C) and the short-circuit powers Sk'' at every bus are compared with "
+                               'the results published in the report.'),
+    ('Relay curves', 'IEC 60255-151 inverse-time equation t = TMS·k/((I/Is)^α - 1): standard inverse (k 0.14, α 0.02) and very inverse '
+                     '(k 13.5, α 1) at ten times the pickup with TMS 0.1.'),
+    ('Acceptance', 'Voltages within 0.0015 pu, angles within 0.02°, currents within 0.002 kA, powers within 0.05 MVA and times within 0.002 s of the reference.'),
+]
+
+
+def _verification_body(va, W, appendix=False):
+    out = [Paragraph(('Appendix: ' if appendix else '') + 'Verification of the calculation engine', H2)]
+    for t, x in VERIF_TEXT:
+        out += [Paragraph(f'<b>{t}.</b> {x}', TXT), Spacer(1, 3)]
+    n = int((va['Result'] == 'PASS').sum())
+    out += [Spacer(1, 4), Paragraph(f'<b>Result: {n} of {len(va)} checks pass.</b>', TXT), Spacer(1, 4), _table(va, W, status_col='Result')]
+    return out
+
+
+def verification_pdf(va):
+    """Stand-alone verification document of the calculation engine (given to a client on request)."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm, topMargin=13 * mm, bottomMargin=13 * mm,
+                            title='Verification of the Calculation Engine')
+    W = doc.width
+    hd = Table([[[Paragraph('NetworkGuard AI: Verification of the Calculation Engine', H1),
+                  Paragraph(f"Issued {datetime.now().strftime('%d %b %Y')}", SUB)], _logo()]], colWidths=['78%', '22%'])
+    hd.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('ALIGN', (1, 0), (1, 0), 'RIGHT'), ('LINEBELOW', (0, 0), (-1, 0), 1.2, BLUE)]))
+    doc.build([hd, Spacer(1, 6)] + _verification_body(va, W), onFirstPage=_page, onLaterPages=_page)
+    return buf.getvalue()
+
+
 def study_pdf(data, res, title='Network Study', network_name='Network', engineer=''):
     """res: dict with any of 'lf', 'vd', 'sc', 'prot', 'cont', 'val'."""
     buf = io.BytesIO()
@@ -182,11 +224,23 @@ def study_pdf(data, res, title='Network Study', network_name='Network', engineer
     ct = res.get('cont')
     if ct:
         s += [PageBreak(), Paragraph('N-1 contingency', H2), _table(ct['table'], W)]
+    fs = res.get('fs')
+    if fs:
+        s += [PageBreak(), Paragraph(f"Fault study: {fs['line']}", H2),
+              _kpis([('Fault', f"{fs['fault']} at {fs['d_km']:.1f} km"), ('Total', f"{fs['Ik (kA)']:.2f} kA"), (f"From {fs['from']}", f"{fs['I_from (kA)']:.2f} kA"),
+                     (f"From {fs['to']}", f"{fs['I_to (kA)']:.2f} kA")], W)]
+        if fs.get('estimate'):
+            s.append(Paragraph(f"Location that best matches the measured currents: {fs['estimate']['loc_km']:.1f} km from {fs['from']}.", TXT))
+        if len(fs['compare']):
+            s += [Paragraph('Calculated against measured', H2), _table(fs['compare'], W)]
+        s.append(_img(npl.sld_matplotlib(data, fault=None), W, 95 * mm))
+        if len(fs['relays']):
+            s += [Paragraph('Expected relay operation', H2), _table(fs['relays'], W, status_col=None)]
+        if len(fs['buses']):
+            s += [Paragraph('Voltage during the fault', H2), _table(fs['buses'], W, status_col=None)]
     va = res.get('val')
     if va is not None:
-        s += [PageBreak(), Paragraph('Validation against published results', H2),
-              Paragraph('The calculation engine is checked against the IEEE 9 and 14 bus test systems (published load flow results), '
-                        'hand calculations with the IEC 60909 formulas and the IEC 60255-151 relay equations.', TXT), _table(va, W, status_col='Result')]
+        s += [PageBreak()] + _verification_body(va, W, appendix=True)
     s += [Spacer(1, 8), Paragraph('Methods: load flow by Newton-Raphson; short circuit by IEC 60909 (equivalent voltage source, c = 1.1 max / 1.0 min, line '
                                   'capacitances and loads neglected); relay times by IEC 60255-151 / IEEE C37.112; line parameters from conductor and tower '
                                   'geometry (GMD / GMR, Carson earth return, earth wires neglected).', SUB)]

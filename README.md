@@ -12,13 +12,15 @@ One Streamlit app with one login for all PowerGuard AI modules.
 - **Modules**: TransformerGuard, GridGuard, PDGuard, MotorGuard, RelayGuard, FaultGuard, each with its own pages and downloads.
 - **NetworkGuard** (`modules/networkguard`, built in this repository): single-line diagram from per-equipment data (forms or Excel), load flow,
   voltage drop, IEC 60909 short circuit with breaker duty, protection coordination (distance zones, overcurrent grading), N-1 contingency,
-  validation against the IEEE 9/14-bus results and IEC 60909 hand calculations. Real network data is uploaded in the app, never committed.
+  fault study of real faults (from FaultGuard in the same session, from disturbance records and event lists, or by hand), single-line diagram
+  from a PDF drawing, equipment data from relay settings files; synced from its own repository (NetworkGuard-AI). Real network data is
+  uploaded in the app, never committed.
 - **Data source**: demo substation (simulated, anonymised) or the results analyzed on the module pages in the session.
 
 ## Structure
 - `pg_platform/`: platform code (theme, runner that runs each module as a page with its own session state, fleet results,
   asset register, PDF reports, pages).
-- `modules/<module>/`: copies of the module apps, synced from their repositories with `python tools/sync_modules.py` (NetworkGuard lives only here).
+- `modules/<module>/`: copies of the module apps, synced from their repositories with `python tools/sync_modules.py` .
 - `pg_paths.py`: logo and model paths.
 - `PowerGuard_Master.app.py`: the earlier portal (kept unchanged).
 

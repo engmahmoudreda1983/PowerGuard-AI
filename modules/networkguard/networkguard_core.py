@@ -12,6 +12,7 @@ Network data is a dict of tables (one per equipment type). Every table row is on
 typical values and flagged, so the study can run before all data is available."""
 import io
 import math
+import re
 import warnings
 
 import numpy as np
@@ -45,7 +46,8 @@ SCHEMA = {
         'Breaking kA': ('kA', 'Breaker rating at this voltage level if different from the substation value (empty = substation value)', '', 'num'),
     },
     'Lines': {
-        'Line': ('', 'Line or cable circuit name (one row per circuit)', None, 'id'),
+        'Line': ('', 'Line or cable circuit name, the same at both ends (one row per circuit)', None, 'id'),
+        'Other Names': ('', 'Other names of the circuit (relay description, number such as L12), separated by commas', '', 'text'),
         'From Bus': ('', 'Sending-end bus', None, 'text'),
         'To Bus': ('', 'Receiving-end bus', None, 'text'),
         'Type': ('', 'OHL (overhead line) or Cable', 'OHL', 'text'),
@@ -109,6 +111,13 @@ SCHEMA = {
         'Q MVAr': ('MVAr', 'Reactive power', 0.0, 'num'),
         'In Service': ('', '1 = in service, 0 = out of service', 1, 'num'),
     },
+    'Breakers': {
+        'Breaker': ('', 'Circuit breaker name', None, 'id'),
+        'Bus': ('', 'Bus the breaker connects to', None, 'text'),
+        'Element': ('', 'Line, transformer, reactor or coupler the breaker switches', '', 'text'),
+        'Breaking kA': ('kA', 'Rated short-circuit breaking current', 40.0, 'num'),
+        'Rated A': ('A', 'Rated normal current', 2000.0, 'num'),
+    },
     'Relays': {
         'Relay': ('', 'Relay name', None, 'id'),
         'Element': ('', 'Protected line or transformer', None, 'text'),
@@ -132,9 +141,9 @@ SCHEMA = {
     },
 }
 ORDER = list(SCHEMA)
-TYPE_OF = {'Substations': 'Substation', 'Buses': 'Bus', 'Lines': 'Line', 'Transformers': 'Transformer', 'Reactors': 'Reactor',
+TYPE_OF = {'Substations': 'Substation', 'Buses': 'Bus', 'Lines': 'Line', 'Transformers': 'Transformer', 'Reactors': 'Reactor', 'Breakers': 'Breaker',
            'Grids': 'Grid', 'Converters': 'Converter', 'Loads': 'Load', 'Relays': 'Relay'}
-ICON = {'Substations': '🏢', 'Buses': '➖', 'Lines': '🗼', 'Transformers': '🔁', 'Reactors': '🌀', 'Grids': '🌐', 'Converters': '🔀',
+ICON = {'Substations': '🏢', 'Buses': '➖', 'Lines': '🗼', 'Transformers': '🔁', 'Reactors': '🌀', 'Grids': '🌐', 'Converters': '🔀', 'Breakers': '🔲',
         'Loads': '🏭', 'Relays': '🛡️'}
 
 # conductor library: R20 (ohm/km, one sub-conductor), diameter (mm), GMR factor (GMR = k * radius), alpha (1/degC)
@@ -395,7 +404,7 @@ def validate_links(data):
         if r['Substation'] not in subs:
             err.append(f"Bus {r['Bus']}: substation '{r['Substation']}' not found")
     for k, cols in [('Lines', ['From Bus', 'To Bus']), ('Transformers', ['HV Bus', 'LV Bus']), ('Reactors', ['Bus']), ('Grids', ['Bus']),
-                    ('Converters', ['Bus']), ('Loads', ['Bus']), ('Relays', ['Bus'])]:
+                    ('Converters', ['Bus']), ('Loads', ['Bus']), ('Relays', ['Bus']), ('Breakers', ['Bus'])]:
         for _, r in d[k].iterrows():
             for c in cols:
                 if r[c] not in buses:
@@ -586,6 +595,21 @@ def short_circuit(data, case='max', fault_bus=None):
     T['Status'] = np.where(T[['Breaker Duty (%)', 'Making Duty (%)', 'Short-time Duty (%)']].max(axis=1) > 100, 'ACTION',
                            np.where(T[['Breaker Duty (%)', 'Making Duty (%)', 'Short-time Duty (%)']].max(axis=1) > 90, 'WATCH', 'EXCELLENT'))
     out = {'bus': T, 'case': case}
+    Bk = d['Breakers']
+    if len(Bk):
+        ik = T.set_index('Bus')
+        rows = []
+        for _, b in Bk.iterrows():
+            if b['Bus'] not in ik.index:
+                continue
+            r = ik.loc[b['Bus']]
+            I = max(r['Ik3 (kA)'], r['Ik1 (kA)'])
+            duty = 100 * I / float(b['Breaking kA']) if b['Breaking kA'] else np.nan
+            rows.append({'Breaker': b['Breaker'], 'Bus': b['Bus'], 'Element': b['Element'], 'Fault Current (kA)': round(I, 2), 'Breaking (kA)': b['Breaking kA'],
+                         'Duty (%)': round(duty, 1), 'ip (kA)': r['ip (kA)'], 'Making Duty (%)': round(100 * r['ip (kA)'] / (2.5 * float(b['Breaking kA'])), 1),
+                         'Status': 'ACTION' if max(duty, 100 * r['ip (kA)'] / (2.5 * float(b['Breaking kA']))) > 100 else
+                         ('WATCH' if max(duty, 100 * r['ip (kA)'] / (2.5 * float(b['Breaking kA']))) > 90 else 'EXCELLENT')})
+        out['breakers'] = pd.DataFrame(rows).sort_values('Duty (%)', ascending=False, ignore_index=True) if rows else pd.DataFrame()
     if fault_bus:
         out['contrib'] = fault_contributions(data, fault_bus, case)
     return out
@@ -808,6 +832,34 @@ def validation():
     sc.calc_sc(net, case='max', fault='1ph')
     out.append({'Test': 'IEC 60909 hand calculation', 'Quantity': "Ik1'' at the line end (kA)", 'Published': round(math.sqrt(3) * c * Un / abs(2 * Z1 + Z0), 3),
                 'NetworkGuard': round(net.res_bus_sc.ikss_ka.iloc[1], 3)})
+    # IEC TR 60909-4 example network (grids, transformers, three-winding transformer, power station units, generators, motors)
+    try:
+        import iec60909_4_example as ex
+        import contextlib
+        import io as _io
+        import logging
+        logging.getLogger('pandapower').setLevel(logging.ERROR)
+        quiet = contextlib.redirect_stdout(_io.StringIO())
+
+        def run(fault, case):
+            net = ex.iec_60909_4()
+            if case == 'min':
+                net.line['endtemp_degree'] = 80.0
+                net.ext_grid['s_sc_min_mva'] = net.ext_grid['s_sc_max_mva'] / 10
+                net.ext_grid['rx_min'] = net.ext_grid['rx_max']
+            with quiet:
+                sc.calc_sc(net, fault=fault, case=case, ip=True, tk_s=0.1, kappa_method='C')
+            names = [f"Bus {i + 1} ({kv:g} kV)" for i, kv in enumerate(net.bus.vn_kv)]
+            return net.res_bus_sc, names
+        T4 = 'IEC TR 60909-4 example'
+        for (fault, case, col, ref, q, nd) in (('3ph', 'max', 'ikss_ka', ex.IK3_MAX, "Ik3'' max (kA)", 4), ('3ph', 'max', 'ip_ka', ex.IP3_MAX, 'ip 3-phase (kA)', 4),
+                                               ('3ph', 'max', 'skss_mw', ex.SK3_MAX, "Sk3'' (MVA)", 2), ('3ph', 'min', 'ikss_ka', ex.IK3_MIN, "Ik3'' min (kA)", 4),
+                                               ('2ph', 'max', 'ikss_ka', ex.IK2_MAX, "Ik2'' max (kA)", 4), ('2ph', 'max', 'ip_ka', ex.IP2_MAX, 'ip 2-phase (kA)', 4)):
+            r, names = run(fault, case)
+            for i, v in enumerate(ref):
+                out.append({'Test': T4, 'Quantity': f'{names[i]}: {q}', 'Published': v, 'NetworkGuard': round(float(r[col].iloc[i]), nd)})
+    except Exception as e:      # the example file is missing: say so in the table
+        out.append({'Test': 'IEC TR 60909-4 example', 'Quantity': f'not run ({e})', 'Published': 0.0, 'NetworkGuard': 1.0})
     # relay curve: IEC SI, TMS 0.1, M = 10 -> 0.297 s
     out.append({'Test': 'IEC 60255-151 relay curve', 'Quantity': 'Standard inverse, TMS 0.1, 10 x pickup (s)', 'Published': 0.297,
                 'NetworkGuard': round(float(oc_time(10.0, 1.0, 0.1, 'IEC SI')), 3)})
@@ -815,7 +867,8 @@ def validation():
                 'NetworkGuard': round(float(oc_time(10.0, 1.0, 0.1, 'IEC VI')), 3)})
     T = pd.DataFrame(out)
     T['Difference'] = (T['NetworkGuard'] - T['Published']).round(4)
-    tol = np.where(T['Quantity'].str.contains('angle'), 0.02, np.where(T['Test'].str.startswith('IEEE'), 0.0015, 0.002))
+    tol = np.where(T['Quantity'].str.contains('angle'), 0.02, np.where(T['Test'].str.startswith('IEEE'), 0.0015,
+                   np.where(T['Quantity'].str.contains('MVA'), 0.05, 0.002)))
     T['Result'] = np.where(T['Difference'].abs() <= tol + 1e-9, 'PASS', 'CHECK')
     return T
 
@@ -879,7 +932,89 @@ def demo():
     Rl.loc[Rl['Relay'] == 'IL-IC/1-21A', 'Z1 %'] = 95
     Rl.loc[Rl['Relay'] == 'SH-EG/1-21A', 'T2 s'] = 0.3
     Rl.loc[Rl['Relay'] == 'SH-EG/1-21A', 'T3 s'] = 0.5
-    return clean({'Substations': S, 'Buses': B, 'Lines': L, 'Transformers': T, 'Reactors': Rx, 'Grids': G, 'Converters': C, 'Loads': Ld, 'Relays': Rl})
+    sub_of = dict(zip(B['Bus'], B['Substation']))
+    brk = dict(zip(S['Substation'], S['Breaking kA']))
+    Bk = [{'Breaker': f"{l['Line']} CB-{side}", 'Bus': l[end], 'Element': l['Line'], 'Breaking kA': brk[sub_of[l[end]]], 'Rated A': 2000}
+          for _, l in L.iterrows() for end, side in (('From Bus', 'A'), ('To Bus', 'B'))]
+    Bk += [{'Breaker': f"{t['Transformer']} CB-{side}", 'Bus': t[end], 'Element': t['Transformer'], 'Breaking kA': 50 if side == 'LV' and t['LV kV'] == 275 else 40,
+            'Rated A': 3150} for _, t in T.iterrows() for end, side in (('HV Bus', 'HV'), ('LV Bus', 'LV'))]
+    return clean({'Substations': S, 'Buses': B, 'Lines': L, 'Transformers': T, 'Reactors': Rx, 'Grids': G, 'Converters': C, 'Loads': Ld,
+                  'Breakers': pd.DataFrame(Bk), 'Relays': Rl})
+
+
+# ------------------------------------------------------------------ building a network step by step
+def _append(data, kind, rows):
+    data = clean(data)
+    data[kind] = pd.concat([data[kind], pd.DataFrame(rows)], ignore_index=True)
+    data[kind] = data[kind].drop_duplicates(id_col(kind), keep='last')
+    return clean(data)
+
+
+def next_position(data):
+    S = clean(data)['Substations']
+    n = len(S)
+    return float((n % 4) * 3.0), float(9.0 - (n // 4) * 3.0)
+
+
+def add_substation(data, name, kvs, x=None, y=None, breaking=40.0):
+    if x is None or y is None:
+        x, y = next_position(data)
+    data = _append(data, 'Substations', [{'Substation': name, 'X': x, 'Y': y, 'Breaking kA': breaking, 'Short-time kA (1 s)': breaking, 'Busbar A': 3150}])
+    return _append(data, 'Buses', [{'Bus': f'{name} {kv:g}', 'Substation': name, 'kV': kv, 'Vmin pu': 0.95, 'Vmax pu': 1.05} for kv in kvs])
+
+
+def add_line(data, a, b, circuits=1, length=None, typ='OHL', conductor='', tower='', rating=2000.0, name=None, breakers=True):
+    d = clean(data)
+    sub = dict(zip(d['Buses']['Bus'], d['Buses']['Substation']))
+    base = name or f"{sub.get(a, a)}-{sub.get(b, b)}"
+    rows, bk = [], []
+    brk = dict(zip(d['Substations']['Substation'], d['Substations']['Breaking kA']))
+    for c in range(1, int(circuits) + 1):
+        ln = f'{base}/{c}'
+        rows.append({'Line': ln, 'From Bus': a, 'To Bus': b, 'Type': typ, 'Length km': length, 'Rating A': rating, 'Conductor': conductor, 'Tower': tower, 'In Service': 1})
+        if breakers:
+            bk += [{'Breaker': f'{ln} CB-A', 'Bus': a, 'Element': ln, 'Breaking kA': brk.get(sub.get(a), 40.0), 'Rated A': rating},
+                   {'Breaker': f'{ln} CB-B', 'Bus': b, 'Element': ln, 'Breaking kA': brk.get(sub.get(b), 40.0), 'Rated A': rating}]
+    data = _append(data, 'Lines', rows)
+    return _append(data, 'Breakers', bk) if bk else data
+
+
+def add_transformer(data, hv, lv, count=1, mva=None, uk=None, name=None, breakers=True):
+    d = clean(data)
+    kv = dict(zip(d['Buses']['Bus'], d['Buses']['kV'])); sub = dict(zip(d['Buses']['Bus'], d['Buses']['Substation']))
+    n0 = (d['Transformers']['HV Bus'] == hv).sum()
+    rows, bk = [], []
+    for k in range(1, int(count) + 1):
+        t = f"{name or sub.get(hv, hv) + ' T'}{n0 + k}"
+        rows.append({'Transformer': t, 'HV Bus': hv, 'LV Bus': lv, 'MVA': mva, 'HV kV': kv.get(hv), 'LV kV': kv.get(lv), 'uk %': uk, 'In Service': 1})
+        if breakers:
+            bk += [{'Breaker': f'{t} CB-HV', 'Bus': hv, 'Element': t}, {'Breaker': f'{t} CB-LV', 'Bus': lv, 'Element': t}]
+    data = _append(data, 'Transformers', rows)
+    return _append(data, 'Breakers', bk) if bk else data
+
+
+def add_reactor(data, bus, mvar=None, line='', count=1, name=None):
+    d = clean(data)
+    kv = dict(zip(d['Buses']['Bus'], d['Buses']['kV'])); sub = dict(zip(d['Buses']['Bus'], d['Buses']['Substation']))
+    n0 = (d['Reactors']['Bus'] == bus).sum()
+    return _append(data, 'Reactors', [{'Reactor': f"{name or sub.get(bus, bus) + ' R'}{n0 + k}", 'Bus': bus, 'Line': line, 'MVAr': mvar, 'kV': kv.get(bus), 'In Service': 1}
+                                      for k in range(1, int(count) + 1)])
+
+
+def add_grid(data, name, bus, sk_max=None, sk_min=None, slack=False, p_import=0.0):
+    data = clean(data)
+    if slack:
+        data['Grids']['Slack'] = 0
+    return _append(data, 'Grids', [{'Grid': name, 'Bus': bus, 'Slack': 1 if slack or not len(data['Grids']) else 0, 'P Import MW': p_import, 'V Setpoint pu': 1.0,
+                                    'Sk max MVA': sk_max, 'Sk min MVA': sk_min}])
+
+
+def add_converter(data, name, bus, p=0.0, rated=600.0):
+    return _append(data, 'Converters', [{'Converter': name, 'Bus': bus, 'P MW': p, 'Q MVAr': 0.0, 'Rated MW': rated, 'In Service': 1}])
+
+
+def add_breaker(data, name, bus, element='', breaking=40.0, rated=2000.0):
+    return _append(data, 'Breakers', [{'Breaker': name, 'Bus': bus, 'Element': element, 'Breaking kA': breaking, 'Rated A': rated}])
 
 
 # ------------------------------------------------------------------ single-line diagram geometry
@@ -913,7 +1048,8 @@ def sld_layout(data):
     src = [{'id': r['Grid'], 'kind': 'Grid', 'bus': r['Bus']} for _, r in d['Grids'].iterrows()] + \
           [{'id': r['Converter'], 'kind': 'Converter', 'bus': r['Bus']} for _, r in d['Converters'].iterrows()] + \
           [{'id': r['Load'], 'kind': 'Load', 'bus': r['Bus']} for _, r in d['Loads'].iterrows()]
-    return {'pos': pos, 'subs': subs, 'branches': br, 'shunts': sh, 'sources': src}
+    bk = [{'id': r['Breaker'], 'bus': r['Bus'], 'element': r['Element']} for _, r in d['Breakers'].iterrows()]
+    return {'pos': pos, 'subs': subs, 'branches': br, 'shunts': sh, 'sources': src, 'breakers': bk}
 
 
 # ------------------------------------------------------------------ platform register
@@ -968,3 +1104,173 @@ def asset_rows(lf=None, scr=None, prot=None, cont=None):
     if len(R):
         R = R.sort_values('Risk (%)', ascending=False).drop_duplicates('Asset ID')
     return R
+
+
+# ------------------------------------------------------------------ fault study: a real fault on a line
+FAULT_OF_TYPE = {'AG': '1ph', 'BG': '1ph', 'CG': '1ph', 'AB': '2ph', 'BC': '2ph', 'CA': '2ph', 'AC': '2ph',
+                 'ABG': '2ph', 'BCG': '2ph', 'CAG': '2ph', 'ACG': '2ph', 'ABC': '3ph', 'ABCG': '3ph'}
+FAULT_LABEL = {'1ph': 'Single phase to ground', '2ph': 'Phase to phase', '3ph': 'Three phase'}
+
+
+def _norm(s):
+    return re.sub(r'[^A-Z0-9]+', ' ', str(s).upper()).split()
+
+
+def match_line(name, data):
+    """The network line that a name from another source (relay description, FaultGuard title) refers to.
+    Uses the line ID, its other names, and its end substations. Returns (line, score)."""
+    import re as _re  # noqa: F401
+    d = clean(data)
+    toks = [t for t in _norm(name) if t not in ('KV', 'LINE', 'CIRCUIT', 'OHL', '400', '380', '275', '220', '132')]
+    nums = {t.lstrip('L') for t in toks if re.fullmatch(r'L?\d{1,3}', t)}
+    words = [t for t in toks if not re.fullmatch(r'L?\d{1,3}', t) and len(t) >= 3]
+    sub = dict(zip(d['Buses']['Bus'], d['Buses']['Substation']))
+    best, score = None, 0
+    for _, r in d['Lines'].iterrows():
+        ends = ' '.join(_norm(f"{sub.get(r['From Bus'], r['From Bus'])} {sub.get(r['To Bus'], r['To Bus'])} {r['Line']} {r.get('Other Names', '')}"))
+        s = sum(2 for w in words if w[:4] in ends) + sum(1 for w in words if w[:3] in ends and w[:4] not in ends)
+        own = set(re.findall(r'\d{1,3}', f"{r['Line']} {r.get('Other Names', '')}"))
+        s += 3 * len(nums & own)
+        if s > score:
+            best, score = r['Line'], s
+    return best, score
+
+
+def fault_study(data, line, d_km, fault='1ph', rf=0.0, case='max', measured=None):
+    """Fault on a line at d_km from its From Bus: total current, current from each end, bus voltages, branch currents and
+    the expected relay operation. measured: {'I_total': kA, 'I_from': kA, 'I_to': kA, 'loc_km': km} (any of them)."""
+    from pandapower.shortcircuit.toolbox import calc_sc_on_line
+    import logging
+    logging.getLogger('pandapower').setLevel(logging.ERROR)
+    d, _ = filled(data)
+    L = d['Lines'].set_index('Line')
+    if line not in L.index:
+        raise ValueError(f'Line {line} not found')
+    r = L.loc[line]
+    length = float(r['Length km'])
+    pos = min(max(float(d_km) / length, 0.001), 0.999)
+    net = build(data, 'sc')
+    ix = int(net.line.index[net.line.name == line][0])
+    a_bus, b_bus = int(net.line.at[ix, 'from_bus']), int(net.line.at[ix, 'to_bus'])
+    aux, fb = calc_sc_on_line(net, ix, pos, fault=fault, case=case, branch_results=True, r_fault_ohm=float(rf or 0.0))
+    bn = dict(zip(aux.bus.index, aux.bus.name))
+    ik = float(aux.res_bus_sc.at[fb, 'ikss_ka'])
+    seg = aux.line[(aux.line.from_bus == fb) | (aux.line.to_bus == fb)]
+    I = {}
+    for j, s in seg.iterrows():
+        other = s.to_bus if s.from_bus == fb else s.from_bus
+        cur = aux.res_line_sc.at[j, 'ikss_from_ka'] if s.from_bus == other else aux.res_line_sc.at[j, 'ikss_to_ka']
+        I[int(other)] = float(cur)
+    ia, ib = I.get(a_bus, 0.0), I.get(b_bus, 0.0)
+    # bus voltages during the fault (from the branch results)
+    V = {}
+    for j, l_ in aux.line.iterrows():
+        for side, b_ in (('from', l_.from_bus), ('to', l_.to_bus)):
+            v = aux.res_line_sc.at[j, f'vm_{side}_pu'] if f'vm_{side}_pu' in aux.res_line_sc else np.nan
+            if pd.notna(v) and b_ != fb:
+                V[bn[b_]] = float(v)
+    buses = pd.DataFrame([{'Bus': b, 'Voltage during fault (pu)': round(v, 3), 'Dip (%)': round(100 * (1 - v), 1)} for b, v in V.items()]).sort_values('Voltage during fault (pu)') \
+        if V else pd.DataFrame(columns=['Bus', 'Voltage during fault (pu)', 'Dip (%)'])
+    br = []
+    for j, l_ in aux.line.iterrows():
+        if not l_.in_service:
+            continue
+        nm = line + (' (fault side A)' if (l_.from_bus == fb or l_.to_bus == fb) and a_bus in (l_.from_bus, l_.to_bus) else
+                     ' (fault side B)' if (l_.from_bus == fb or l_.to_bus == fb) else '') if (fb in (l_.from_bus, l_.to_bus)) else l_['name']
+        br.append({'Branch': nm, 'From': bn[l_.from_bus], 'To': bn[l_.to_bus], 'I From (kA)': round(float(aux.res_line_sc.at[j, 'ikss_from_ka']), 3),
+                   'I To (kA)': round(float(aux.res_line_sc.at[j, 'ikss_to_ka']), 3)})
+    branches = pd.DataFrame(br)
+    # ---- expected relay operation
+    ZL = complex(float(r['R1 ohm/km']), float(r['X1 ohm/km'])) * length
+    zl = {ln: complex(rr['R1 ohm/km'], rr['X1 ohm/km']) * rr['Length km'] for ln, rr in L.iterrows()}
+    ends = {ln: (rr['From Bus'], rr['To Bus']) for ln, rr in L.iterrows()}
+    A, B = r['From Bus'], r['To Bus']
+    da, db = pos * length, (1 - pos) * length
+    rel = []
+    R = d['Relays']
+    cur_by_line = {row['Branch']: row for row in br}
+    for _, rr in R.iterrows():
+        e = rr['Element']
+        if e not in ends:
+            continue
+        p, q = ends[e]
+        if e == line:
+            frac = pos if rr['Bus'] == A else 1 - pos
+            zseen = abs(ZL) * frac
+            i_rel = ia if rr['Bus'] == A else ib
+            how = 'on the faulted line'
+        elif rr['Bus'] in (p, q) and ({p, q} & {A, B}) and rr['Bus'] not in (A, B):
+            near = A if A in (p, q) else B
+            i_adj = cur_by_line.get(e)
+            i_adj = float(max(i_adj['I From (kA)'], i_adj['I To (kA)'])) if i_adj else 0.0
+            i_end = ia if near == A else ib
+            infeed = (i_end / i_adj) if i_adj > 1e-6 else np.inf
+            zseen = abs(zl[e]) + abs(ZL) * (pos if near == A else 1 - pos) * infeed
+            i_rel = i_adj
+            how = f'back-up through {near} (infeed ×{infeed:.2f})' if np.isfinite(infeed) else 'no current'
+        else:
+            continue
+        if rr['Function'] == '21':
+            zr = abs(zl[e])
+            zs = [(1, rr['Z1 %'] / 100 * zr, rr['T1 s']), (2, rr['Z2 %'] / 100 * zr, rr['T2 s']), (3, rr['Z3 %'] / 100 * zr, rr['T3 s'])]
+            hit = next(((z, t) for z, reach, t in zs if zseen <= reach), None)
+            rel.append({'Relay': rr['Relay'], 'Bus': rr['Bus'], 'Function': 'Distance', 'Sees': how, 'Current (kA)': round(i_rel, 2),
+                        'Impedance seen (ohm)': round(zseen, 2) if np.isfinite(zseen) else None,
+                        'Operates in': f'zone {hit[0]}' if hit else 'no zone', 'Expected time (s)': round(float(hit[1]), 3) if hit else None})
+        elif rr['Function'] in ('51', '51N') and (rr['Function'] == '51N') == (fault == '1ph'):
+            t = float(oc_time(i_rel * 1000, rr['Pickup A'], rr['TMS'], rr['Curve'], rr['Inst Pickup A'], rr['Inst Time s']))
+            rel.append({'Relay': rr['Relay'], 'Bus': rr['Bus'], 'Function': 'Earth fault' if rr['Function'] == '51N' else 'Overcurrent', 'Sees': how,
+                        'Current (kA)': round(i_rel, 2), 'Impedance seen (ohm)': None, 'Operates in': 'inverse time' if np.isfinite(t) else 'below pickup',
+                        'Expected time (s)': round(t, 3) if np.isfinite(t) else None})
+    relays = pd.DataFrame(rel)
+    if len(relays):
+        relays = relays.sort_values('Expected time (s)', na_position='last', ignore_index=True)
+    out = {'line': line, 'from': A, 'to': B, 'length_km': length, 'd_km': pos * length, 'pos': pos, 'fault': fault, 'rf': rf, 'case': case,
+           'Ik (kA)': round(ik, 3), 'I_from (kA)': round(ia, 3), 'I_to (kA)': round(ib, 3), 'buses': buses, 'branches': branches, 'relays': relays}
+    # ---- comparison with the measured values
+    m = measured or {}
+    cmp_ = []
+    for k, lab, val in (('I_total', 'Total fault current (kA)', ik), ('I_from', f'Current from {A} (kA)', ia), ('I_to', f'Current from {B} (kA)', ib),
+                        ('loc_km', f'Distance from {A} (km)', pos * length)):
+        if m.get(k) not in (None, '') and not (isinstance(m.get(k), float) and np.isnan(m.get(k))):
+            mv = float(m[k])
+            diff = 100 * (val - mv) / mv if mv else np.nan
+            cmp_.append({'Quantity': lab, 'Measured': round(mv, 3), 'Calculated': round(val, 3), 'Difference (%)': round(diff, 1),
+                         'Status': 'EXCELLENT' if abs(diff) <= 10 else ('WATCH' if abs(diff) <= 25 else 'ACTION')})
+    out['compare'] = pd.DataFrame(cmp_)
+    return out
+
+
+def _end_currents(net, ix, pos, fault, rf, case='max'):
+    from pandapower.shortcircuit.toolbox import calc_sc_on_line
+    a_bus, b_bus = int(net.line.at[ix, 'from_bus']), int(net.line.at[ix, 'to_bus'])
+    aux, fb = calc_sc_on_line(net, ix, pos, fault=fault, case=case, branch_results=True, r_fault_ohm=float(rf or 0.0))
+    I = {}
+    for j, s_ in aux.line[(aux.line.from_bus == fb) | (aux.line.to_bus == fb)].iterrows():
+        other = s_.to_bus if s_.from_bus == fb else s_.from_bus
+        I[int(other)] = float(aux.res_line_sc.at[j, 'ikss_from_ka'] if s_.from_bus == other else aux.res_line_sc.at[j, 'ikss_to_ka'])
+    return I.get(a_bus, 0.0), I.get(b_bus, 0.0)
+
+
+def locate_from_currents(data, line, fault='1ph', rf=0.0, I_from=None, I_to=None, n=20):
+    """Fault position that best explains the measured end currents (scan along the line, then refine)."""
+    import logging
+    logging.getLogger('pandapower').setLevel(logging.ERROR)
+    if not I_from and not I_to:
+        return None
+    d, _ = filled(data)
+    length = float(d['Lines'].set_index('Line').at[line, 'Length km'])
+    net = build(data, 'sc')
+    ix = int(net.line.index[net.line.name == line][0])
+
+    def err(pos):
+        ia, ib = _end_currents(net, ix, pos, fault, rf)
+        e = (((ia - I_from) / I_from) ** 2 if I_from else 0) + (((ib - I_to) / I_to) ** 2 if I_to else 0)
+        return e / (bool(I_from) + bool(I_to))
+    grid = [(k / n, err(k / n)) for k in range(1, n)]
+    p0, e0 = min(grid, key=lambda x: x[1])
+    for p in np.linspace(max(0.005, p0 - 1 / n), min(0.995, p0 + 1 / n), 11):
+        e = err(p)
+        if e < e0:
+            p0, e0 = p, e
+    return {'loc_km': round(p0 * length, 1), 'rms_error_pct': round(100 * math.sqrt(e0), 1)}

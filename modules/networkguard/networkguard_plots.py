@@ -31,7 +31,7 @@ def _ends(lay, a, b, off):
     return (x1 + sx + px, y1 + py), (x2 - sx + px, y2 + py)
 
 
-def sld_figure(data, lf=None, scr=None, fault=None, select=None, height=720, mode='network'):
+def sld_figure(data, lf=None, scr=None, fault=None, select=None, height=720, mode='network', fault_line=None):
     """Plotly single-line diagram. mode: 'network' (voltage colours), 'lf' (loading and voltage), 'sc' (fault levels)."""
     d = ng.clean(data)
     lay = ng.sld_layout(d)
@@ -130,6 +130,28 @@ def sld_figure(data, lf=None, scr=None, fault=None, select=None, height=720, mod
         ssym.append(sym); scol.append(col)
     fig.add_trace(go.Scatter(x=sx, y=sy, mode='markers', marker=dict(size=11, symbol=ssym, color=scol, line=dict(color=scol, width=1.5)), text=stx,
                              hovertemplate='%{text}<extra></extra>', customdata=scd, showlegend=False, name='equipment'))
+    # circuit breakers: a small square on the branch next to its bus
+    ends = {}
+    for br in lay['branches']:
+        if br['a'] in lay['pos'] and br['b'] in lay['pos']:
+            if br['kind'] == 'Line':
+                p1, p2 = _ends(lay, br['a'], br['b'], br['off'])
+            else:
+                (x1, y1), (x2, y2) = lay['pos'][br['a']], lay['pos'][br['b']]
+                p1, p2 = (x1 + br['off'], y1), (x1 + br['off'], y2)
+            ends[(br['id'], br['a'])] = (p1, p2); ends[(br['id'], br['b'])] = (p2, p1)
+    kx, ky, kt, kc = [], [], [], []
+    for bk in lay.get('breakers', []):
+        e = ends.get((bk['element'], bk['bus']))
+        if not e:
+            continue
+        (x1, y1), (x2, y2) = e
+        L_ = math.hypot(x2 - x1, y2 - y1) or 1
+        f = min(0.18 / L_, 0.4)
+        kx.append(x1 + (x2 - x1) * f); ky.append(y1 + (y2 - y1) * f); kt.append(f"<b>{bk['id']}</b> (circuit breaker) at {bk['bus']}"); kc.append(['Breakers', bk['id']])
+    if kx:
+        fig.add_trace(go.Scatter(x=kx, y=ky, mode='markers', marker=dict(size=8, symbol='square', color='white', line=dict(color='#0b2e59', width=1.6)),
+                                 text=kt, hovertemplate='%{text}<extra></extra>', customdata=kc, showlegend=False, name='breakers'))
     fig.add_trace(go.Scatter(x=mx, y=my, mode='markers', marker=dict(size=11, color='white', line=dict(color=mcol, width=2), symbol=msym), text=mtxt,
                              hovertemplate='%{text}<extra></extra>', customdata=mcd, showlegend=False, name='branches'))
     if select and select[0] in ('Lines', 'Transformers'):
@@ -137,6 +159,14 @@ def sld_figure(data, lf=None, scr=None, fault=None, select=None, height=720, mod
             if c[1] == select[1]:
                 fig.add_trace(go.Scatter(x=[x], y=[y], mode='markers', marker=dict(size=20, color='rgba(47,128,237,.25)', line=dict(color='#2f80ed', width=2)),
                                          hoverinfo='skip', showlegend=False))
+    if fault_line:
+        ln_, pos_ = fault_line
+        br_ = next((b for b in lay['branches'] if b['id'] == ln_ and b['kind'] == 'Line'), None)
+        if br_ and br_['a'] in lay['pos'] and br_['b'] in lay['pos']:
+            (x1, y1), (x2, y2) = _ends(lay, br_['a'], br_['b'], br_['off'])
+            fx, fy = x1 + (x2 - x1) * pos_, y1 + (y2 - y1) * pos_
+            fig.add_trace(go.Scatter(x=[fx], y=[fy], mode='markers+text', marker=dict(size=28, symbol='star', color='#facc15', line=dict(color='#d63a3a', width=2)),
+                                     text=[f'⚡ {ln_}'], textposition='top center', textfont=dict(color='#d63a3a', size=12), hoverinfo='skip', showlegend=False))
     if fault and fault in lay['pos']:
         x, y = lay['pos'][fault]
         fig.add_trace(go.Scatter(x=[x], y=[y + 0.02], mode='markers+text', marker=dict(size=26, symbol='star', color='#facc15', line=dict(color='#d63a3a', width=2)),
@@ -149,6 +179,8 @@ def sld_figure(data, lf=None, scr=None, fault=None, select=None, height=720, mod
             fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(size=10, color=ST_COL[st]), name=lab))
     xs = [p[0] for p in lay['pos'].values()] or [0]
     ys = [p[1] for p in lay['pos'].values()] or [0]
+    if not lay['pos']:
+        fig.add_annotation(x=0, y=0, text='The network is empty: build it from a drawing, step by step or from Excel.', showarrow=False, font=dict(size=14, color='#5b6b82'))
     fig.update_layout(height=height, margin=dict(l=10, r=10, t=10, b=10), plot_bgcolor='white', paper_bgcolor='white', dragmode='pan',
                       xaxis=dict(visible=False, range=[min(xs) - 1, max(xs) + 1]), yaxis=dict(visible=False, range=[min(ys) - 1.2, max(ys) + 0.9], scaleanchor='x'),
                       legend=dict(orientation='h', y=0.01, x=0.01, bgcolor='rgba(255,255,255,.8)'), hoverlabel=dict(bgcolor='white'), clickmode='event+select')
