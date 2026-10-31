@@ -12,3 +12,4 @@ pytesseract
 openpyxl
 pillow
 prophet
+pandapower>=3.1

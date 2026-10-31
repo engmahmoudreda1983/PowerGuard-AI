@@ -21,6 +21,7 @@ MODULE_INFO = {
     'motorguard': ('MotorGuard', '⚙️', 'HV motor condition: stator, bearings, vibration, supply quality'),
     'relayguard': ('RelayGuard', '🛡️', 'Protection relay condition, tests and disturbance records'),
     'faultguard': ('FaultGuard', '🔍', 'Trip and incident analysis from disturbance records and events'),
+    'networkguard': ('NetworkGuard', '🌐', 'Network studies: load flow, voltage drop, short circuit, protection coordination, N-1'),
 }
 
 
@@ -173,7 +174,18 @@ def fault_demo():
     return pd.DataFrame(out)
 
 
-DEMO = {'transformerguard': transformer_demo, 'gridguard': lambda: grid_demo()[0], 'pdguard': pd_demo, 'motorguard': motor_demo,
+@st.cache_data(show_spinner=False)
+def network_demo():
+    _paths()
+    import networkguard_core as nc
+    D = nc.demo()
+    lf = nc.load_flow(D)
+    R = nc.asset_rows(lf, nc.short_circuit(D), nc.protection(D), nc.contingency(D))
+    return pd.DataFrame([_row('networkguard', r['Asset ID'], r['Asset'], r['Asset Type'], r['Risk (%)'], r['Status'], r['Main Driver'], r['Action'])
+                         for r in R.to_dict('records')])
+
+
+DEMO = {'networkguard': network_demo, 'transformerguard': transformer_demo, 'gridguard': lambda: grid_demo()[0], 'pdguard': pd_demo, 'motorguard': motor_demo,
         'relayguard': relay_demo, 'faultguard': fault_demo}
 
 
@@ -193,6 +205,8 @@ def _from_register(module, recs):
                 rows.append(_row(module, r['Motor ID'], r['Motor ID'], 'Motor', r['Overall Risk (%)'], r['Status'], r.get('Governing Mode'), r.get('Action')))
             elif module == 'relayguard':
                 rows.append(_row(module, r['Relay ID'], r['Relay ID'], 'Protection relay', r['Overall Risk (%)'], r['Status'], r.get('Governing Mode'), r.get('Action')))
+            elif module == 'networkguard':
+                rows.append(_row(module, r['Asset ID'], r.get('Asset'), r.get('Asset Type'), r['Risk (%)'], r['Status'], r.get('Main Driver'), r.get('Action')))
             elif module == 'faultguard':
                 x = _row(module, r.get('Line'), r.get('Line'), 'Line', r['Overall Risk (%)'], r['Status'],
                          f"{r.get('Highest-Risk Mode', '')} ({r.get('Main Reason', '')})", r.get('Action'))

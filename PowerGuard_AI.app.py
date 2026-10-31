@@ -1,7 +1,7 @@
 """PowerGuard AI: Asset Intelligence Platform.
 
-One login, one Command Center, Asset 360 and the six modules (TransformerGuard, GridGuard, PDGuard, MotorGuard,
-RelayGuard, FaultGuard) as pages. Login credentials come from the Streamlit secrets APP_USERNAME and APP_PASSWORD.
+One login, one Command Center, Asset 360 and the seven modules (TransformerGuard, GridGuard, PDGuard, MotorGuard,
+RelayGuard, FaultGuard, NetworkGuard) as pages. Login credentials come from the Streamlit secrets APP_USERNAME and APP_PASSWORD.
 © 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. Confidential and proprietary."""
 import hmac
 import warnings
@@ -52,7 +52,7 @@ def login():
                 else:
                     st.error('Invalid username or password.')
         st.markdown("<div style='text-align:center;color:#9fb7da;font-size:12px;margin-top:10px'>"
-                    "TransformerGuard · GridGuard · PDGuard · MotorGuard · RelayGuard · FaultGuard<br><br>"
+                    "TransformerGuard · GridGuard · PDGuard · MotorGuard · RelayGuard · FaultGuard · NetworkGuard<br><br>"
                     "© 2026 PowerGuard AI by Eng. Mahmoud Reda Ibrahim. Confidential and proprietary.</div>", unsafe_allow_html=True)
 
 
@@ -61,7 +61,8 @@ if not ss['logged_in']:
     st.stop()
 
 SCRIPTS = {'transformerguard': 'AI_Transformer_Health_V2.app.py', 'gridguard': 'GridGuard_AI.app.py', 'pdguard': 'PDGuard_AI.app.py',
-           'motorguard': 'MotorGuard_AI.app.py', 'relayguard': 'RelayGuard_AI.app.py', 'faultguard': 'FaultGuard_AI.app.py'}
+           'motorguard': 'MotorGuard_AI.app.py', 'relayguard': 'RelayGuard_AI.app.py', 'faultguard': 'FaultGuard_AI.app.py',
+           'networkguard': 'NetworkGuard_AI.app.py'}
 PAGES = {}
 
 
@@ -89,6 +90,7 @@ PAGES['about'] = st.Page(_platform_page(P.about, 'about'), title='About', icon='
 nav = st.navigation({'Overview': [PAGES['home'], PAGES['asset360']],
                      'Asset health': [PAGES[k] for k in ('transformerguard', 'gridguard', 'pdguard', 'motorguard')],
                      'Protection and faults': [PAGES['relayguard'], PAGES['faultguard']],
+                     'Network studies': [PAGES['networkguard']],
                      'Platform': [PAGES['about']]})
 
 try:

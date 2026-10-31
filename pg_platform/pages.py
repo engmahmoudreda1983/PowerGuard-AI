@@ -39,7 +39,7 @@ def _source_bar(key):
 
 def _data(source):
     if source == 'demo':
-        with st.spinner('Loading the demo substation from all six modules...'):
+        with st.spinner('Loading the demo substation from all modules...'):
             F = FL.fleet('demo')
     else:
         F = FL.fleet('pages', {k: runner.module_state(k) for k in FL.MODULE_INFO})
@@ -150,8 +150,8 @@ def command_center(pages):
 
     T.section('Modules', 'press a module to open it')
     keys = list(FL.MODULE_INFO)
-    for row in (keys[:3], keys[3:]):
-        cols = st.columns(3)
+    for row in (keys[:4], keys[4:]):
+        cols = st.columns(4)
         for col, k in zip(cols, row):
             _tile(col, k, F[F['Module'] == FL.MODULE_INFO[k][0]], pages[k])
 
@@ -317,7 +317,7 @@ def about(pages):
     T.hero('About PowerGuard AI', 'Asset Intelligence Platform', 'Version 1.0')
     st.markdown("""
 <div class='pg-card'>
-<p><b>PowerGuard AI</b> brings six condition-monitoring and analysis modules into one platform with one login, one asset register and one
+<p><b>PowerGuard AI</b> brings seven condition-monitoring, analysis and network-study modules into one platform with one login, one asset register and one
 risk scale (0-100 %, <b>NORMAL</b> ≤ 35 %, <b>WATCH</b> 35-70 %, <b>ACTION</b> > 70 %, FMEA per IEC 60812).</p>
 </div>""", unsafe_allow_html=True)
     cols = st.columns(3)
