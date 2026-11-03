@@ -838,7 +838,7 @@ with tabs[8]:
                 ln, sc_ = ng.match_line(r.get('Line', ''), D)
                 loc = _num(r.get('Location (km)')) if 'Location (km)' in r else _num(r.get('Location'))
                 if st.button('Use this incident', key='fs_use_inc'):
-                    ss['fs_pre'] = {'line': ln, 'd_km': loc, 'type': ng.FAULT_OF_TYPE.get(str(r.get('Fault Type', '')).upper(), '1ph'),
+                    ss['fs_pre'] = {'line': ln, 'd_km': loc, 'type': str(r.get('Fault Type', '') or 'AG').upper(),
                                     'I_from': _num(r.get('Fault Current (kA)')), 'I_to': None, 'note': f"From FaultGuard incident {r.get('Incident', '')}: "
                                     f"line '{r.get('Line', '')}' matched to {ln}; the fault current is the recording relay's current, set at the From end - move it if the "
                                     "record was taken at the other end."}
@@ -888,7 +888,7 @@ with tabs[8]:
                                     ends[main_side] = (a['I_fault_max_kA'], a.get('loc_km'), rec.get('station', '') or 'record')
                                 loc = a.get('loc_km')
                                 d_from = (Lrow['Length km'] - loc) if (loc is not None and main_side == 'to') else loc
-                                ss['fs_pre'] = {'line': ln, 'd_km': d_from, 'type': ng.FAULT_OF_TYPE.get(str(a.get('type', '')).upper(), '1ph'),
+                                ss['fs_pre'] = {'line': ln, 'd_km': d_from, 'type': str(a.get('type', '') or 'AG').upper(),
                                                 'I_from': ends.get('from', (None,))[0], 'I_to': ends.get('to', (None,))[0],
                                                 'note': f"Records: {', '.join(n for n, _ in recs)}. FaultGuard: {a.get('type')} fault, "
                                                         f"{a.get('I_fault_max_kA', 0):.2f} kA, {('%.1f km from ' % loc + str(rec.get('station') or 'the recording end')) if loc is not None else 'not located'}."
@@ -899,57 +899,55 @@ with tabs[8]:
         pre = ss.get('fs_pre', {})
         if pre.get('note'):
             st.info(pre['note'])
-        st.markdown('##### Fault')
-        c1, c2, c3, c4 = st.columns([2, 1, 1.3, 1])
+        st.markdown('##### Fault applied to the network')
+        FT = list(ng.PHASE_FAULTS)
+        ft0 = str(pre.get('type', 'AG')).upper().replace('-', '').replace(' ', '').replace('PHASE', '')
+        ft0 = ft0 if ft0 in FT else {'1PH': 'AG', '2PH': 'BC', '3PH': 'ABC'}.get(ft0, 'AG')
+        c1, c2, c3, c4 = st.columns([2, 1, 1.4, 1])
         ln = c1.selectbox('Line', LINES, index=LINES.index(pre['line']) if pre.get('line') in LINES else 0, key=f"fs_line_{pre.get('line')}")
         Lr = ng.filled(D)[0]['Lines'].set_index('Line').loc[ln]
         Lkm = float(Lr['Length km']) if pd.notna(Lr['Length km']) else 100.0
         dk = c2.number_input(f"Distance from {Lr['From Bus']} (km)", 0.0, Lkm, float(min(max(pre.get('d_km') or Lkm / 2, 0.0), Lkm)), 0.5, key=f"fs_d_{pre.get('d_km')}_{ln}")
-        typ = c3.selectbox('Fault type', ['1ph', '2ph', '3ph'], index=['1ph', '2ph', '3ph'].index(pre.get('type', '1ph')), format_func=ng.FAULT_LABEL.get, key=f"fs_t_{pre.get('type')}")
+        typ = c3.selectbox('Fault type (faulted phases)', FT, index=FT.index(ft0),
+                           format_func=lambda k: f"{k} · {ng.FAULT_NAME[ng.PHASE_FAULTS[k][0]]}", key=f"fs_t_{ft0}")
         rf = c4.number_input('Fault resistance (Ω)', 0.0, 300.0, 0.0, 1.0, key='fs_rf')
-        c1, c2, c3 = st.columns(3)
-        mf = c1.number_input(f"Measured current from {Lr['From Bus']} (kA, 0 = not known)", 0.0, 200.0, float(pre.get('I_from') or 0.0), 0.01, key=f"fs_if_{pre.get('I_from')}")
-        mt = c2.number_input(f"Measured current from {Lr['To Bus']} (kA, 0 = not known)", 0.0, 200.0, float(pre.get('I_to') or 0.0), 0.01, key=f"fs_it_{pre.get('I_to')}")
-        ml = c3.number_input('Location reported by the relays / FaultGuard (km from the From end, 0 = not known)', 0.0, Lkm, float(min(pre.get('d_km') or 0.0, Lkm)), 0.5,
-                             key=f"fs_ml_{pre.get('d_km')}_{ln}")
-        if st.button('⚡ Analyze the fault', type='primary', key='fs_go') and ready():
-            with st.spinner('Fault on the line, currents from both ends and relay operation...'):
+        if st.button('⚡ Apply the fault to the network', type='primary', key='fs_go') and ready():
+            with st.spinner('Short circuit on the whole network, relay operation and tripping sequence...'):
                 try:
-                    meas = {'I_from': mf or None, 'I_to': mt or None, 'loc_km': ml or None}
-                    fs = ng.fault_study(D, ln, dk, typ, rf, measured=meas)
-                    fs['estimate'] = ng.locate_from_currents(D, ln, typ, rf, mf or None, mt or None) if (mf or mt) else None
-                    set_res(fs=fs)
+                    set_res(fs=ng.fault_analysis(D, ln, dk, typ, rf))
                 except Exception as e:
-                    st.error(f'Fault study failed: {e}')
+                    st.error(f'Fault analysis failed: {e}')
         fs = res().get('fs')
-        if fs:
-            kpis([('Fault', f"{ng.FAULT_LABEL[fs['fault']]} at {fs['d_km']:.1f} km ({fs['pos'] * 100:.0f}%)"), ('Total current', f"{fs['Ik (kA)']:.2f} kA"),
-                  (f"From {fs['from']}", f"{fs['I_from (kA)']:.2f} kA"), (f"From {fs['to']}", f"{fs['I_to (kA)']:.2f} kA")])
-            if fs.get('estimate'):
-                e = fs['estimate']
-                st.markdown(f"<div class='pg-note'>📍 Location that best matches the measured currents: <b>{e['loc_km']:.1f} km</b> from {fs['from']} "
-                            f"(remaining difference {e['rms_error_pct']:.1f} %).</div>", unsafe_allow_html=True)
-            if len(fs['compare']):
-                st.markdown('##### Calculated against measured'); show(fs['compare'])
-                st.caption('NORMAL within 10 %, WATCH 10-25 %, ACTION above 25 %. A large difference points to network data to check: the fault level of the '
-                           'neighbouring grids, the line impedance, or the fault resistance.')
+        if fs and 'sequence' in fs:
+            ends_ = list(fs['end_I'].items())
+            clr = fs['sequence'][fs['sequence']['Role'] == 'Main']['Time (s)'].max() if len(fs['sequence']) else None
+            kpis([('Fault', f"{fs['type']} at {fs['d_km']:.1f} km ({fs['pos'] * 100:.0f}%)"), ('Fault current', f"{fs['Ik (kA)']:.2f} kA")]
+                 + [(f'From {b}', f'{v:.2f} kA') for b, v in ends_[:2]]
+                 + [('Cleared in', f"{clr * 1000:.0f} ms" if clr == clr and clr is not None else 'not cleared')])
+            for n in fs['notes']:
+                st.markdown(f"<div class='pg-note'>{n}</div>", unsafe_allow_html=True)
             st.plotly_chart(npl.sld_figure(D, fault_line=(fs['line'], fs['pos']), height=560), width=STRETCH, key='fs_sld')
-            st.markdown('##### Expected relay operation')
-            if len(fs['relays']):
-                show(fs['relays'])
+            st.markdown('##### Sequence of tripping')
+            if len(fs['sequence']):
+                show(fs['sequence'])
+                st.plotly_chart(npl.trip_sequence_figure(fs['sequence']), width=STRETCH, key='fs_seq')
             else:
-                st.info('No relays on this line or the next lines in the relay table.')
+                st.info('No relay operates: add the relays of this line and the next lines to the relay table (or load their settings files).')
+            st.markdown('##### Every relay that sees the fault')
+            if len(fs['relays']):
+                show(fs['relays'], col=None)
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown('##### Voltage during the fault')
-                if len(fs['buses']):
-                    st.dataframe(fs['buses'], hide_index=True, width=STRETCH)
-                else:
-                    st.caption('Bus voltages are given for three-phase faults.')
+                st.markdown('##### Phase voltages during the fault')
+                show(fs['buses'])
             with c2:
-                st.markdown('##### Current in every branch')
-                st.dataframe(fs['branches'], hide_index=True, width=STRETCH, height=360)
-            st.download_button('📄 Fault study report (PDF)', pdfrep.study_pdf(D, {'fs': fs}, 'Fault Study', ss['names'][ss['ws']]), 'Fault_Study.pdf', key='fs_pdf')
+                st.markdown('##### Current from each grid')
+                st.dataframe(fs['grids'], hide_index=True, width=STRETCH)
+            st.markdown('##### Current in every line and transformer')
+            st.dataframe(fs['branches'], hide_index=True, width=STRETCH, height=360)
+            st.caption('Symmetrical components on the whole network, pre-fault voltage 1.0 pu, loads neglected. Trip time = relay setting + '
+                       f'{int(ng.RELAY_OP_S * 1000)} ms relay + {int(ng.BREAKER_S * 1000)} ms breaker.')
+            st.download_button('📄 Fault analysis report (PDF)', pdfrep.study_pdf(D, {'fs': fs}, 'Fault Analysis', ss['names'][ss['ws']]), 'Fault_Analysis.pdf', key='fs_pdf')
 
 # ============================================================== 9. Combined report
 with tabs[9]:
@@ -995,7 +993,9 @@ with tabs[9]:
             if 'cont' in R:
                 z.writestr('n1_contingency.csv', R['cont']['table'].to_csv(index=False))
             if 'fs' in R:
-                z.writestr('fault_study_relays.csv', R['fs']['relays'].to_csv(index=False)); z.writestr('fault_study_branches.csv', R['fs']['branches'].to_csv(index=False))
+                z.writestr('fault_relays.csv', R['fs']['relays'].to_csv(index=False)); z.writestr('fault_branch_currents.csv', R['fs']['branches'].to_csv(index=False))
+                if 'sequence' in R['fs']:
+                    z.writestr('fault_trip_sequence.csv', R['fs']['sequence'].to_csv(index=False)); z.writestr('fault_bus_voltages.csv', R['fs']['buses'].to_csv(index=False))
             z.writestr('network.xlsx', ng.network_excel(D))
         b2.download_button('🗂️ All results (CSV + network Excel, ZIP)', zb.getvalue(), 'NetworkGuard_Results.zip', 'application/zip', width=STRETCH)
         if st.button('📌 Save this study to the history', key='rp_save'):

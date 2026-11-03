@@ -317,3 +317,42 @@ def rx_figure(row, line_z_ohm, angle_deg, title=''):
     fig.update_layout(template='plotly_white', height=460, title=title, xaxis=dict(title='R (Ω primary)', range=[-0.4 * m, m], zeroline=True),
                       yaxis=dict(title='X (Ω primary)', range=[-0.4 * m, m], scaleanchor='x'), legend=dict(orientation='h', y=-0.2), margin=dict(l=10, r=10, t=50, b=10))
     return fig
+
+
+def trip_sequence_figure(seq):
+    """Tripping sequence on a time axis: main protection first, back-ups after (if the main protection fails)."""
+    fig = go.Figure()
+    if seq is None or not len(seq):
+        return fig
+    col = {'Main': '#1a9e5c'}
+    for _, r in seq.iloc[::-1].iterrows():
+        c = col.get(r['Role'], '#2a78d6' if r['Role'].startswith('Second') else '#d99a00')
+        lab = f"{r['Relay']} @ {r['Bus']}"
+        fig.add_trace(go.Scatter(x=[0, r['Time (s)']], y=[lab, lab], mode='lines', line=dict(color=c, width=6), showlegend=False, hoverinfo='skip'))
+        fig.add_trace(go.Scatter(x=[r['Time (s)']], y=[lab], mode='markers+text', marker=dict(size=14, color=c, symbol='diamond'),
+                                 text=[f"{r['Time (s)'] * 1000:.0f} ms · {r['Operates']}"], textposition='middle right', showlegend=False,
+                                 hovertext=f"{r['Role']}", hoverinfo='text'))
+    for nm, c in (('Main protection', '#1a9e5c'), ('Second main', '#2a78d6'), ('Back-up (if the main fails)', '#d99a00')):
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(size=12, color=c, symbol='diamond'), name=nm))
+    tmax = float(seq['Time (s)'].max())
+    fig.update_layout(template='plotly_white', height=120 + 42 * len(seq), xaxis=dict(title='Time after fault inception (s)', range=[0, tmax * 1.35 + 0.05]),
+                      margin=dict(l=10, r=10, t=20, b=40), legend=dict(orientation='h', y=-0.25))
+    return fig
+
+
+def trip_sequence_mpl(seq, ax=None):
+    """Static tripping sequence for the PDF report."""
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(10, 0.9 + 0.42 * max(len(seq), 1)))
+    tmax = float(seq['Time (s)'].max()) if len(seq) else 1
+    for k, (_, r) in enumerate(seq.iloc[::-1].iterrows()):
+        c = '#1a9e5c' if r['Role'] == 'Main' else ('#2a78d6' if r['Role'].startswith('Second') else '#d99a00')
+        ax.plot([0, r['Time (s)']], [k, k], color=c, lw=5, solid_capstyle='butt')
+        ax.plot([r['Time (s)']], [k], marker='D', ms=8, color=c)
+        ax.text(r['Time (s)'] + tmax * 0.02, k, f"{r['Time (s)'] * 1000:.0f} ms  {r['Relay']} @ {r['Bus']} ({r['Operates']})", va='center', fontsize=8)
+    ax.set_yticks([]); ax.set_xlim(0, tmax * 1.9 + 0.05); ax.set_ylim(-0.7, len(seq) - 0.3)
+    ax.set_xlabel('Time after fault inception (s)', fontsize=8); ax.tick_params(labelsize=8)
+    for sp in ('top', 'right', 'left'):
+        ax.spines[sp].set_visible(False)
+    fig.tight_layout()
+    return fig

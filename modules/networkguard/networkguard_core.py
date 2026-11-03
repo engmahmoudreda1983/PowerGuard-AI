@@ -1274,3 +1274,265 @@ def locate_from_currents(data, line, fault='1ph', rf=0.0, I_from=None, I_to=None
         if e < e0:
             p0, e0 = p, e
     return {'loc_km': round(p0 * length, 1), 'rms_error_pct': round(100 * math.sqrt(e0), 1)}
+
+
+# ============================================================== fault analysis on the network (real fault applied)
+PHASE_FAULTS = {'AG': ('1ph', 'A'), 'BG': ('1ph', 'B'), 'CG': ('1ph', 'C'),
+                'AB': ('2ph', 'C'), 'BC': ('2ph', 'A'), 'CA': ('2ph', 'B'), 'AC': ('2ph', 'B'),
+                'ABG': ('2phg', 'C'), 'BCG': ('2phg', 'A'), 'CAG': ('2phg', 'B'), 'ACG': ('2phg', 'B'),
+                'ABC': ('3ph', 'A'), 'ABCG': ('3ph', 'A')}
+FAULT_NAME = {'1ph': 'single phase to ground', '2ph': 'phase to phase', '2phg': 'two phases to ground', '3ph': 'three phase'}
+RELAY_OP_S, BREAKER_S = 0.02, 0.05          # relay pick-up and breaker opening times added to every setting
+_A = np.exp(2j * np.pi / 3)
+
+
+def _seq_matrices(aux, fb):
+    """Positive- and zero-sequence bus impedance matrices of the short-circuit network (pandapower internals), the fault bus
+    index in them and the branch admittances (from / to)."""
+    from pandapower.shortcircuit import calc_sc
+    from pandapower.shortcircuit.ppc_conversion import _init_ppc, _create_k_updated_ppci, _get_is_ppci_bus
+    from pandapower.shortcircuit.impedance import _calc_ybus, _calc_zbus
+    from pandapower.pd2ppc_zero import _pd2ppc_zero
+    from pandapower.pypower.idx_brch_sc import K_ST
+    calc_sc(aux, bus=fb, fault='1ph', case='max', branch_results=False)      # sets the calculation options
+    ppc, p1 = _init_ppc(aux)
+    pb = _get_is_ppci_bus(aux, np.array([fb]))
+    _, p1, _ = _create_k_updated_ppci(aux, p1, ppci_bus=pb)
+    _calc_ybus(p1); _calc_zbus(aux, p1)
+    _, p0 = _pd2ppc_zero(aux, ppc['branch'][:, K_ST])
+    _calc_ybus(p0); _calc_zbus(aux, p0)
+    return p1, p0, int(pb[0])
+
+
+def _phases(v0, v1, v2, special):
+    """Phase values from sequence values computed with phase A as the special phase, relabelled so that `special` is it."""
+    a = v0 + v1 + v2
+    b = v0 + _A ** 2 * v1 + _A * v2
+    c = v0 + _A * v1 + _A ** 2 * v2
+    order = 'ABC'
+    k = order.index(special)
+    lab = [order[(k + i) % 3] for i in range(3)]             # computed a, b, c -> actual labels
+    return dict(zip(lab, (a, b, c)))
+
+
+def _branch_rows(aux, p1):
+    """For every in-service line and transformer of the network: its row in the internal branch table (matched by end buses)."""
+    from pandapower.pypower.idx_brch import F_BUS, T_BUS
+    lk = aux._pd2ppc_lookups['bus']
+    f_, t_ = p1['branch'][:, F_BUS].real.astype(int), p1['branch'][:, T_BUS].real.astype(int)
+    used, rows = set(), []
+    els = [('Line', j, r_['name'], int(r_.from_bus), int(r_.to_bus)) for j, r_ in aux.line.iterrows() if r_.in_service]
+    els += [('Transformer', j, r_['name'], int(r_.hv_bus), int(r_.lv_bus)) for j, r_ in aux.trafo.iterrows() if r_.in_service]
+    for kind, j, nm, a, b in els:
+        ia, ib = int(lk[a]), int(lk[b])
+        cand = [k for k in np.where(((f_ == ia) & (t_ == ib)) | ((f_ == ib) & (t_ == ia)))[0] if k not in used]
+        if not cand:
+            continue
+        k = int(cand[0]); used.add(k)
+        rows.append((kind, nm, a, b, k, f_[k] == ia))
+    return rows
+
+
+def fault_analysis(data, line, d_km, fault_type='BG', rf=0.0, prefault_pu=1.0, breaker_s=BREAKER_S):
+    """A real fault applied to the network model (as a short-circuit study in ETAP): fault `fault_type` (AG, BC, ABG, ABC ...)
+    on `line` at d_km from its From Bus. Symmetrical components on the whole network: the fault current, the current in every
+    phase of every line and transformer, the phase voltages at every bus, the current from every grid, the operation of every
+    relay (distance 21 with the real loop impedances, line differential 87L, overcurrent 51 / earth fault 51N) and the
+    sequence of tripping with the coordination margins. Pre-fault voltage `prefault_pu` (1.0 = nominal), loads neglected."""
+    from pandapower.shortcircuit.toolbox import calc_sc_on_line
+    import logging
+    logging.getLogger('pandapower').setLevel(logging.ERROR)
+    ft = str(fault_type).upper().replace('-', '').replace(' ', '')
+    if ft in ('1PH', '2PH', '3PH'):
+        ft = {'1PH': 'AG', '2PH': 'BC', '3PH': 'ABC'}[ft]
+    if ft not in PHASE_FAULTS:
+        raise ValueError(f'Unknown fault type {fault_type}')
+    kind, special = PHASE_FAULTS[ft]
+    d, _ = filled(data)
+    L = d['Lines'].set_index('Line')
+    if line not in L.index:
+        raise ValueError(f'Line {line} not found')
+    r = L.loc[line]
+    length = float(r['Length km'])
+    pos = min(max(float(d_km) / length, 0.001), 0.999)
+    net = build(data, 'sc')
+    ix = int(net.line.index[net.line.name == line][0])
+    aux, fb = calc_sc_on_line(net, ix, pos, fault='1ph', case='max')
+    p1, p0, f = _seq_matrices(aux, fb)
+    Z1, Z0 = p1['internal']['Zbus'], p0['internal']['Zbus']
+    base = p1['baseMVA']
+    vn = aux.bus.vn_kv.to_dict()
+    lk = aux._pd2ppc_lookups['bus']
+    zb = vn[fb] ** 2 / base
+    zf = float(rf or 0.0) / zb
+    E = complex(prefault_pu)
+    z1, z2, z0 = Z1[f, f], Z1[f, f], Z0[f, f]
+    if kind == '3ph':
+        I1, I2, I0 = E / (z1 + zf), 0j, 0j
+    elif kind == '1ph':
+        I1 = I2 = I0 = E / (z1 + z2 + z0 + 3 * zf)
+    elif kind == '2ph':
+        I1 = E / (z1 + z2 + zf); I2, I0 = -I1, 0j
+    else:
+        zp = z2 * (z0 + 3 * zf) / (z2 + z0 + 3 * zf)
+        I1 = E / (z1 + zp); I2 = -I1 * (z0 + 3 * zf) / (z2 + z0 + 3 * zf); I0 = -I1 * z2 / (z2 + z0 + 3 * zf)
+    V1 = E - Z1[:, f] * I1
+    V2 = -Z1[:, f] * I2
+    V0 = -Z0[:, f] * I0
+    ibase = lambda b: base / (np.sqrt(3) * vn[b])       # kA per pu at a bus
+    If = _phases(I0, I1, I2, special)
+    Ik = max(abs(v) for v in If.values()) * ibase(fb)
+    bn = aux.bus.name.to_dict(); bn[fb] = 'Fault point'
+    # bus voltages
+    brows = []
+    for b in aux.bus.index:
+        if b == fb or b not in lk.keys() if hasattr(lk, 'keys') else False:
+            continue
+        k = int(lk[b])
+        if k < 0 or k >= len(V1):
+            continue
+        ph = _phases(V0[k], V1[k], V2[k], special)
+        vmin = min(abs(v) for v in ph.values())
+        brows.append({'Bus': bn[b], 'kV': vn[b], 'Va (pu)': round(abs(ph['A']), 3), 'Vb (pu)': round(abs(ph['B']), 3), 'Vc (pu)': round(abs(ph['C']), 3),
+                      'Lowest (pu)': round(vmin, 3), 'Dip (%)': round(100 * (1 - vmin / abs(E)), 1),
+                      'Status': 'ACTION' if vmin < 0.5 else ('WATCH' if vmin < 0.9 else 'NORMAL')})
+    buses = pd.DataFrame(brows).sort_values('Lowest (pu)', ignore_index=True) if brows else pd.DataFrame()
+    # branch currents (each end, into the branch)
+    Yf1, Yt1, Yf0, Yt0 = p1['internal']['Yf'], p1['internal']['Yt'], p0['internal']['Yf'], p0['internal']['Yt']
+    i1f, i1t, i2f, i2t = Yf1 @ V1, Yt1 @ V1, Yf1 @ V2, Yt1 @ V2
+    i0f, i0t = Yf0 @ V0, Yt0 @ V0
+    rows, ends = [], {}
+    A_, B_ = r['From Bus'], r['To Bus']
+    for kd, nm, a, b, k, same in _branch_rows(aux, p1):
+        fa = (i0f[k], i1f[k], i2f[k]) if same else (i0t[k], i1t[k], i2t[k])
+        fb_ = (i0t[k], i1t[k], i2t[k]) if same else (i0f[k], i1f[k], i2f[k])
+        for bus_, s_ in ((a, fa), (b, fb_)):
+            ph = _phases(*s_, special)
+            vph = _phases(V0[int(lk[bus_])], V1[int(lk[bus_])], V2[int(lk[bus_])], special) if bus_ != fb else None
+            ends[(nm, bn.get(bus_, bus_))] = {'I': {p: v * ibase(bus_) for p, v in ph.items()}, 'I0': 3 * s_[0] * ibase(bus_),
+                                              'V': {p: v * vn[bus_] / np.sqrt(3) for p, v in vph.items()} if vph else None}
+        Ia = ends[(nm, bn.get(a, a))]['I']
+        Ib = ends[(nm, bn.get(b, b))]['I']
+        name = nm
+        if nm.startswith(line) and '_aux_line' in str(nm):
+            name = f"{line} ({bn.get(a, a) if a != fb else bn.get(b, b)} side)"
+        rows.append({'Branch': name, 'Type': kd, 'From': bn.get(a, 'fault point'), 'To': bn.get(b, 'fault point'),
+                     'Ia (kA)': round(abs(Ia['A']), 2), 'Ib (kA)': round(abs(Ia['B']), 2), 'Ic (kA)': round(abs(Ia['C']), 2),
+                     '3I0 (kA)': round(abs(ends[(nm, bn.get(a, a))]['I0']), 2), 'Highest (kA)': round(max(abs(v) for v in Ia.values()), 2)})
+    branches = pd.DataFrame(rows).sort_values('Highest (kA)', ascending=False, ignore_index=True)
+    # currents from the two ends of the faulted line (into the fault)
+    seg = {n_: (int(a_), int(b_)) for n_, a_, b_ in zip(aux.line['name'], aux.line.from_bus, aux.line.to_bus) if fb in (a_, b_)}
+    end_I = {}
+    for n_, (a_, b_) in seg.items():
+        other = a_ if b_ == fb else b_
+        e = ends.get((n_, bn[other]))
+        if e:
+            end_I[bn[other]] = max(abs(v) for v in e['I'].values())
+    # current from every grid (sum of the branch currents leaving its bus)
+    grids = []
+    for _, g_ in aux.ext_grid.iterrows():
+        gb = bn[g_.bus]
+        tot = {p: sum(v['I'][p] for (n_, bb), v in ends.items() if bb == gb) for p in 'ABC'}
+        grids.append({'Grid': g_['name'], 'Bus': gb, 'Highest phase current (kA)': round(max(abs(v) for v in tot.values()), 2)})
+    grids = pd.DataFrame(grids).sort_values('Highest phase current (kA)', ascending=False, ignore_index=True) if grids else pd.DataFrame()
+    # relays
+    R = d['Relays']
+    zl = {ln: (complex(rr['R1 ohm/km'], rr['X1 ohm/km']) * rr['Length km'], complex(rr['R0 ohm/km'], rr['X0 ohm/km']) * rr['Length km'])
+          for ln, rr in L.iterrows()}
+    rel = []
+    for _, rr in R.iterrows():
+        e, bus = rr['Element'], rr['Bus']
+        key = None
+        if e == line:
+            for n_, (a_, b_) in seg.items():
+                if bn.get(a_) == bus or bn.get(b_) == bus:
+                    key = (n_, bus)
+        else:
+            key = (e, bus) if (e, bus) in ends else None
+        if key is None or key not in ends:
+            continue
+        m = ends[key]
+        I, I0, V = m['I'], m['I0'], m['V']
+        fn = str(rr['Function']).upper()
+        where = 'faulted line' if e == line else 'next line (back-up)'
+        out = {'Relay': rr['Relay'], 'Bus': bus, 'Protects': e, 'Function': fn, 'Position': where,
+               'Current (kA)': round(max(abs(v) for v in I.values()), 2), 'Seen': '', 'Operates': 'no', 'Relay time (s)': None}
+        if fn == '87L':
+            if e == line:
+                out.update(Seen='internal fault', Operates='differential', **{'Relay time (s)': 0.0})
+            else:
+                out.update(Seen='external fault (stable)')
+        elif fn == '21' and V and e in zl:
+            z1l, z0l = zl[e]
+            k0 = (z0l - z1l) / (3 * z1l) if abs(z1l) else 0
+            loops = []
+            for p in 'ABC':
+                den = I[p] + k0 * I0
+                if abs(den) > 0.05:
+                    loops.append((p + 'N', V[p] / den))
+            for p, q in (('A', 'B'), ('B', 'C'), ('C', 'A')):
+                den = I[p] - I[q]
+                if abs(den) > 0.05:
+                    loops.append((p + q, (V[p] - V[q]) / den))
+            zones = [(1, rr.get('Z1 %'), rr.get('T1 s')), (2, rr.get('Z2 %'), rr.get('T2 s')), (3, rr.get('Z3 %'), rr.get('T3 s'))]
+            best = None
+            for nm_, z in loops:
+                for zn, pct, t in zones:
+                    if pct is None or pd.isna(pct) or t is None or pd.isna(t):
+                        continue
+                    zr = float(pct) / 100 * z1l
+                    if abs(z - zr / 2) <= abs(zr) / 2:          # inside the mho circle (forward)
+                        if best is None or (zn, float(t)) < (best[1], best[2]):
+                            best = (nm_, zn, float(t), z)
+                        break
+            zmin = min(loops, key=lambda x: abs(x[1])) if loops else None
+            if best:
+                out.update(Seen=f"loop {best[0]}: {abs(best[3]):.1f} Ω ∠{np.degrees(np.angle(best[3])):.0f}°", Operates=f'zone {best[1]}',
+                           **{'Relay time (s)': best[2]})
+            elif zmin:
+                out.update(Seen=f"loop {zmin[0]}: {abs(zmin[1]):.1f} Ω ∠{np.degrees(np.angle(zmin[1])):.0f}° (outside the zones / reverse)")
+        elif fn in ('51', '51N', '50/51', '50N/51N'):
+            ground = 'N' in fn
+            ia = abs(I0) * 1000 if ground else max(abs(v) for v in I.values()) * 1000
+            t = float(oc_time(ia, rr['Pickup A'], rr['TMS'], rr['Curve'], rr['Inst Pickup A'], rr['Inst Time s']))
+            if np.isfinite(t):
+                out.update(Seen=f"{'3I0' if ground else 'phase'} {ia / 1000:.2f} kA", Operates='earth fault' if ground else 'overcurrent',
+                           **{'Relay time (s)': round(t, 3)})
+            else:
+                out.update(Seen=f"{'3I0' if ground else 'phase'} {ia / 1000:.2f} kA (below pick-up)")
+        if out['Relay time (s)'] is not None:
+            out['Trip time (s)'] = round(out['Relay time (s)'] + RELAY_OP_S + breaker_s, 3)
+        rel.append(out)
+    relays = pd.DataFrame(rel)
+    # sequence of tripping
+    seq, notes = [], []
+    if len(relays):
+        relays['Trip time (s)'] = relays.get('Trip time (s)')
+        relays = relays.sort_values('Trip time (s)', na_position='last', ignore_index=True)
+        op = relays[relays['Trip time (s)'].notna()]
+        main = op[op['Protects'] == line].groupby('Bus')['Trip time (s)'].min()
+        cleared = float(main.max()) if len(main) else None
+        for _, o in op.iterrows():
+            role = 'Main' if o['Protects'] == line and o['Trip time (s)'] == main.get(o['Bus']) else \
+                   ('Second main / back-up on the faulted line' if o['Protects'] == line else 'Back-up (trips only if the main protection fails)')
+            margin = None if role == 'Main' or cleared is None else round(o['Trip time (s)'] - cleared, 3)
+            st_ = 'NORMAL' if role == 'Main' else ('NORMAL' if margin is not None and margin >= 0.2 else ('WATCH' if margin is not None and margin >= 0 else 'ACTION'))
+            seq.append({'Step': len(seq) + 1, 'Time (s)': o['Trip time (s)'], 'Relay': o['Relay'], 'Bus': o['Bus'], 'Function': o['Function'],
+                        'Operates': o['Operates'], 'Role': role, 'Margin after clearing (s)': margin, 'Status': st_})
+        for b_ in (A_, B_):
+            if b_ in main.index:
+                notes.append(f"{b_} end trips at {main[b_] * 1000:.0f} ms.")
+            else:
+                notes.append(f"No relay at the {b_} end of {line} in the relay table: that end is not shown as tripping.")
+        if cleared is not None:
+            notes.append(f"The fault is cleared from all known ends in {cleared * 1000:.0f} ms (relay {RELAY_OP_S * 1000:.0f} ms and breaker {breaker_s * 1000:.0f} ms included).")
+        bad = [s_ for s_ in seq if s_['Status'] == 'ACTION']
+        if bad:
+            notes.append('Coordination problem: ' + ', '.join(f"{s_['Relay']} at {s_['Bus']} would trip before or with the main protection" for s_ in bad) + '.')
+        elif any(s_['Role'].startswith('Back-up') for s_ in seq):
+            notes.append('The back-up protections are graded after the main protection.')
+    sequence = pd.DataFrame(seq)
+    return {'line': line, 'from': A_, 'to': B_, 'length_km': length, 'd_km': pos * length, 'pos': pos, 'type': ft, 'kind': kind,
+            'fault': f"{FAULT_NAME[kind]} ({ft})", 'rf': rf, 'prefault_pu': prefault_pu, 'Ik (kA)': round(Ik, 2),
+            'end_I': {k: round(v, 2) for k, v in end_I.items()}, 'buses': buses, 'branches': branches, 'grids': grids,
+            'relays': relays, 'sequence': sequence, 'notes': notes}

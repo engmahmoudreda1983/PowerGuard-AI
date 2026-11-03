@@ -225,20 +225,39 @@ def study_pdf(data, res, title='Network Study', network_name='Network', engineer
     if ct:
         s += [PageBreak(), Paragraph('N-1 contingency', H2), _table(ct['table'], W)]
     fs = res.get('fs')
-    if fs:
-        s += [PageBreak(), Paragraph(f"Fault study: {fs['line']}", H2),
-              _kpis([('Fault', f"{fs['fault']} at {fs['d_km']:.1f} km"), ('Total', f"{fs['Ik (kA)']:.2f} kA"), (f"From {fs['from']}", f"{fs['I_from (kA)']:.2f} kA"),
-                     (f"From {fs['to']}", f"{fs['I_to (kA)']:.2f} kA")], W)]
-        if fs.get('estimate'):
-            s.append(Paragraph(f"Location that best matches the measured currents: {fs['estimate']['loc_km']:.1f} km from {fs['from']}.", TXT))
-        if len(fs['compare']):
-            s += [Paragraph('Calculated against measured', H2), _table(fs['compare'], W)]
+    if fs and 'sequence' in fs:
+        seq = fs['sequence']
+        main = seq[seq['Role'] == 'Main']['Time (s)'] if len(seq) else []
+        clr = f"{float(max(main)) * 1000:.0f} ms" if len(main) else 'not cleared'
+        s += [PageBreak(), Paragraph(f"Fault analysis: {fs['fault']} on {fs['line']}", H2),
+              _kpis([('Location', f"{fs['d_km']:.1f} km from {fs['from']}"), ('Fault current', f"{fs['Ik (kA)']:.2f} kA")]
+                    + [(f'From {b}', f'{v:.2f} kA') for b, v in list(fs['end_I'].items())[:2]] + [('Cleared in', clr)], W)]
+        for n in fs['notes']:
+            s.append(Paragraph('• ' + n, TXT))
         s.append(_img(npl.sld_matplotlib(data, fault_line=(fs['line'], fs.get('pos', 0.5)), zoom=True,
-                                          fault_label=f"{fs['fault']} fault: {fs['d_km']:.1f} km from {fs['from']}"), W, 105 * mm))
+                                          fault_label=f"{fs['type']} fault: {fs['d_km']:.1f} km from {fs['from']}"), W, 100 * mm))
+        s += [PageBreak(), Paragraph('Sequence of tripping', H2)]
+        if len(seq):
+            s.append(_img(npl.trip_sequence_mpl(seq), W, min(20 + 9 * len(seq), 110) * mm))
+            s.append(_table(seq, W))
+            s.append(Paragraph(f"Trip time = relay setting + {ng.RELAY_OP_S * 1000:.0f} ms relay operation + {ng.BREAKER_S * 1000:.0f} ms breaker. "
+                               'Margin = time after the fault is cleared by the main protection: NORMAL ≥ 0.2 s, WATCH 0-0.2 s, ACTION = the back-up '
+                               'would trip with or before the main protection.', SUB))
+        else:
+            s.append(Paragraph('No relay operates: the relays of this line and the next lines are not in the relay table.', TXT))
         if len(fs['relays']):
-            s += [Paragraph('Expected relay operation', H2), _table(fs['relays'], W, status_col=None)]
-        if len(fs['buses']):
-            s += [Paragraph('Voltage during the fault', H2), _table(fs['buses'], W, status_col=None)]
+            s += [Paragraph('Every relay that sees the fault', H2),
+                  _table(fs['relays'][[c for c in ('Relay', 'Bus', 'Protects', 'Function', 'Position', 'Current (kA)', 'Seen', 'Operates', 'Trip time (s)')
+                                       if c in fs['relays']]], W, status_col=None)]
+        s += [PageBreak(), Paragraph('Phase voltages during the fault', H2), _table(fs['buses'], W)]
+        if len(fs['grids']):
+            s += [Paragraph('Current from each grid', H2), _table(fs['grids'], W, status_col=None)]
+        s += [Paragraph('Current in every line and transformer', H2), _table(fs['branches'], W, status_col=None, max_rows=60)]
+        s.append(Paragraph('Method: the fault is applied to the network model at the reported location and solved with symmetrical components '
+                           '(positive, negative and zero sequence networks of all lines, transformers, reactors and grids), pre-fault voltage '
+                           f"{fs.get('prefault_pu', 1.0):.2f} pu, loads neglected. Distance relays use the real loop impedances (phase-earth loops "
+                           'with the residual compensation of the protected line, phase-phase loops) against mho zones; overcurrent and earth-fault '
+                           'relays use their IEC 60255-151 curves.', SUB))
     va = res.get('val')
     if va is not None:
         s += [PageBreak()] + _verification_body(va, W, appendix=True)
