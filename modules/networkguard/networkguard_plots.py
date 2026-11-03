@@ -187,16 +187,27 @@ def sld_figure(data, lf=None, scr=None, fault=None, select=None, height=720, mod
     return fig
 
 
-def sld_matplotlib(data, lf=None, scr=None, fault=None, mode='network', ax=None):
-    """Static diagram for the PDF report."""
+def sld_matplotlib(data, lf=None, scr=None, fault=None, mode='network', ax=None, fault_line=None, zoom=False, fault_label=None):
+    """Static diagram for the PDF report. fault_line = (line, position 0-1 from its From bus): faulted line in red with a star."""
     import matplotlib.pyplot as plt
     d = ng.clean(data)
     lay = ng.sld_layout(d)
     kv = dict(zip(d['Buses']['Bus'], d['Buses']['kV']))
     own = ax is None
+    win = None
+    if fault_line and zoom:
+        br_ = next((b for b in lay['branches'] if b['id'] == fault_line[0] and b['kind'] == 'Line'), None)
+        if br_ and br_['a'] in lay['pos'] and br_['b'] in lay['pos']:
+            (ax_, ay_), (bx_, by_) = lay['pos'][br_['a']], lay['pos'][br_['b']]
+            cx_, cy_ = (ax_ + bx_) / 2, (ay_ + by_) / 2
+            half = max(abs(bx_ - ax_), abs(by_ - ay_) * 1.6, 2.0) / 2 + 1.4
+            win = (cx_ - half, cx_ + half, cy_ - half / 1.6, cy_ + half / 1.6)
     if own:
-        xs = [p[0] for p in lay['pos'].values()]; ys = [p[1] for p in lay['pos'].values()]
-        fig, ax = plt.subplots(figsize=(max(6, (max(xs) - min(xs) + 2) * 0.8), max(4.5, (max(ys) - min(ys) + 2.2) * 0.62)))
+        if win:
+            fig, ax = plt.subplots(figsize=(10, 6.25))
+        else:
+            xs = [p[0] for p in lay['pos'].values()]; ys = [p[1] for p in lay['pos'].values()]
+            fig, ax = plt.subplots(figsize=(max(6, (max(xs) - min(xs) + 2) * 0.8), max(4.5, (max(ys) - min(ys) + 2.2) * 0.62)))
     LF = {}
     if lf:
         LF = {r['Line']: r for _, r in lf['line'].iterrows()}
@@ -209,7 +220,8 @@ def sld_matplotlib(data, lf=None, scr=None, fault=None, mode='network', ax=None)
         if br['kind'] == 'Line':
             (x1, y1), (x2, y2) = _ends(lay, br['a'], br['b'], br['off'])
             col = ST_COL.get(r['Status'], '#888') if r is not None else kv_color(kv.get(br['a'], 400))
-            ax.plot([x1, x2], [y1, y2], color=col, lw=1.4, ls='--' if br['cable'] else '-', zorder=1)
+            hit = bool(fault_line) and br['id'] == fault_line[0]
+            ax.plot([x1, x2], [y1, y2], color='#d63a3a' if hit else col, lw=3.0 if hit else 1.4, ls='--' if br['cable'] else '-', zorder=1)
             if r is not None and mode == 'lf':
                 ax.text((x1 + x2) / 2, (y1 + y2) / 2, f"{r['Loading (%)']:.0f}%", fontsize=5.5, ha='center', va='center',
                         bbox=dict(fc='white', ec='none', pad=0.3), zorder=3)
@@ -245,7 +257,25 @@ def sld_matplotlib(data, lf=None, scr=None, fault=None, mode='network', ax=None)
     if fault and fault in lay['pos']:
         x, y = lay['pos'][fault]
         ax.plot([x], [y], marker='*', ms=16, mfc='#facc15', mec='#d63a3a', zorder=5)
-    ax.set_aspect('equal'); ax.axis('off')
+    if fault_line:
+        br_ = next((b for b in lay['branches'] if b['id'] == fault_line[0] and b['kind'] == 'Line'), None)
+        if br_ and br_['a'] in lay['pos'] and br_['b'] in lay['pos']:
+            (x1, y1), (x2, y2) = _ends(lay, br_['a'], br_['b'], br_['off'])
+            p_ = min(max(float(fault_line[1]), 0.0), 1.0)
+            fx, fy = x1 + (x2 - x1) * p_, y1 + (y2 - y1) * p_
+            big = win is not None
+            ax.plot([fx], [fy], marker='*', ms=34 if big else 22, mfc='#facc15', mec='#d63a3a', mew=1.6, zorder=6)
+            ax.annotate(fault_label or f"Fault {fault_line[0]}", (fx, fy), xytext=(0, 22 if big else 13), textcoords='offset points', ha='center',
+                        fontsize=10 if big else 7, color='#d63a3a', fontweight='bold', bbox=dict(fc='white', ec='#d63a3a', lw=0.8, pad=2), zorder=7)
+    ax.set_aspect('equal')
+    if win:
+        ax.set_xlim(win[0], win[1]); ax.set_ylim(win[2], win[3])
+        for t_ in ax.texts:
+            if t_.get_text() != (fault_label or f"Fault {fault_line[0]}"):
+                t_.set_clip_on(True); t_.set_fontsize(t_.get_fontsize() * 1.6)
+        ax.axis('on'); ax.set_xticks([]); ax.set_yticks([])
+        for sp in ax.spines.values():
+            sp.set_color('#c4d0e0'); ax.axis('off')
     if own:
         fig.tight_layout()
         return fig
