@@ -185,6 +185,13 @@ def network_demo():
                          for r in R.to_dict('records')])
 
 
+@st.cache_data(show_spinner=False)
+def network_n1_demo():
+    _paths()
+    import networkguard_core as nc
+    return nc.contingency(nc.demo())['table']
+
+
 DEMO = {'networkguard': network_demo, 'transformerguard': transformer_demo, 'gridguard': lambda: grid_demo()[0], 'pdguard': pd_demo, 'motorguard': motor_demo,
         'relayguard': relay_demo, 'faultguard': fault_demo}
 

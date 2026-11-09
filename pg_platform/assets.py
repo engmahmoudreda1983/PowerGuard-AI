@@ -50,7 +50,7 @@ def asset_info(sid):
 
 
 def combined_risk(risks):
-    """Asset risk from all modules: the highest module risk + 5 for every other module above 35 % (same rule as the FMEA)."""
+    """Old rule (kept for reference): the highest module risk + 5 for every other module above 35 %."""
     r = sorted([float(x) for x in risks if x is not None], reverse=True)
     if not r:
         return 0.0
@@ -76,22 +76,30 @@ def module_view(F):
     return pd.concat([F[F['Module'] != 'FaultGuard'], latest_incidents(F)], ignore_index=True)
 
 
-def register(F):
-    """Site asset register: one row per site asset with its combined risk."""
+def register(F, crit=None, n1=None, n1_source=''):
+    """Site asset register: one row per site asset with its combined risk (likelihood x consequence, see risk.py).
+    crit: {site asset: criticality 1-5 set by the engineer}; n1: {asset id: N-1 result of its outage}."""
+    from pg_platform import risk as RK
     V = module_view(F)
+    cols = ['Site Asset', 'Name', 'Type', 'Modules', 'Module Count', 'Likelihood', 'Consequence', 'Score', 'Priority', 'Priority Name',
+            'Combined Risk (%)', 'Status', 'Main Driver', 'Action', 'Confirmed', 'Criticality', 'Steps']
     if V.empty:
-        return pd.DataFrame(columns=['Site Asset', 'Name', 'Type', 'Modules', 'Combined Risk (%)', 'Status', 'Main Driver'])
+        return pd.DataFrame(columns=cols)
     V = V.assign(**{'Site Asset': [site_asset(m, a) for m, a in zip(V['Module'], V['Asset ID'])]})
+    V = V[~V['Site Asset'].astype(str).str.startswith('N-1 ')]          # N-1 results are the consequence of other assets
+    crit, n1 = crit or {}, n1 or {}
     rows = []
     for sid, g in V.groupby('Site Asset'):
         if sid in ('-', '', 'None'):
             continue
         name, typ = asset_info(sid)
-        w = g.sort_values('Risk (%)', ascending=False).iloc[0]
-        cr = combined_risk(g['Risk (%)'])
+        if typ == 'Other':
+            typ = str(g.iloc[0].get('Asset Type') or 'Other')
+            name = str(g.iloc[0].get('Asset') or sid)
+        res = RK.assess_asset(g, typ, name, crit.get(sid), n1.get(sid) or next((n1[a] for a in g['Asset ID'] if a in n1), None), n1_source)
         rows.append({'Site Asset': sid, 'Name': name, 'Type': typ, 'Modules': ', '.join(sorted(g['Module'].unique())), 'Module Count': g['Module'].nunique(),
-                     'Combined Risk (%)': cr, 'Status': band(cr), 'Main Driver': f"{w['Module']}: {w['Main Driver']}", 'Action': w['Action']})
-    return pd.DataFrame(rows).sort_values('Combined Risk (%)', ascending=False, ignore_index=True)
+                     **{k: res[k] for k in cols if k in res}})
+    return pd.DataFrame(rows, columns=cols).sort_values(['Score', 'Consequence', 'Likelihood'], ascending=False, ignore_index=True)
 
 
 def rows_of(F, sid):

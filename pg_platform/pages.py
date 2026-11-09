@@ -9,6 +9,7 @@ import streamlit as st
 from pg_platform import assets as A
 from pg_platform import fleet as FL
 from pg_platform import report as RP
+from pg_platform import risk as RK
 from pg_platform import runner
 from pg_platform import theme as T
 
@@ -46,6 +47,50 @@ def _data(source):
     return F
 
 
+def _register(F, source):
+    """Site asset register with the combined risk (likelihood x consequence): engineer criticality and N-1 results."""
+    crit = st.session_state.setdefault('pg_crit', {})
+    if source == 'demo':
+        try:
+            n1 = RK.n1_from_table(FL.network_n1_demo())
+        except Exception:
+            n1 = {}
+        n1.update(RK.DEMO_N1)
+        src = 'demo'
+    else:
+        res = (runner.module_state('networkguard').get('results') or {}).get('real') or {}
+        cont = res.get('cont')
+        n1 = RK.n1_from_table(cont['table']) if cont else {}
+        src = 'NetworkGuard'
+    return A.register(F, crit, n1, src)
+
+
+RK_HELP = """
+**Combined risk = likelihood × consequence** (5 × 5 matrix; ISO 55000 / IEC 31010, Ofgem CNAIM approach, CIGRE asset-management practice).
+
+**Likelihood (1-5)**, from the condition modules (TransformerGuard, GridGuard, PDGuard, MotorGuard, NetworkGuard loading):
+1. start from the highest condition risk: < 20 % → 1, 20-35 → 2, 35-55 → 3, 55-75 → 4, > 75 → 5;
+2. **confirmation**: two modules that measure in different ways and see the **same failure mechanism** (each ≥ 35 %) raise it one step:
+   insulation discharge (DGA PD / D1 / D2 + PDGuard), overheating (DGA thermal / temperature + GridGuard load and hot-spot),
+   motor stator insulation (MotorGuard + PDGuard), protection and breaker (RelayGuard + FaultGuard);
+3. unrelated findings are listed but do not raise it.
+
+**Consequence (1-5)**:
+4. criticality: 400 kV plant 4, 220 / 132 kV 3, 33 kV and below or auxiliary motors 2; the engineer can set any value (5 = critical, e.g. an interconnector);
+5. network impact of its outage (NetworkGuard N-1): load lost, islanding or a branch > 120 % → 5; a branch 100-120 % → 4;
+6. protection readiness (RelayGuard, FaultGuard): its relays or breaker ≥ 55 % → +1, ≥ 75 % → +2 (age and overdue tests do not count).
+
+**Priority**: 15-25 → 1 critical (act within weeks) · 10-14 → 2 high (plan within 3 months) · 5-9 → 3 monitor · 1-4 → 4 normal.
+"""
+
+PCOL = {1: '#dc2626', 2: '#ea580c', 3: '#e6a100', 4: '#16a34a'}
+
+
+def _pchip(p, name):
+    c = PCOL.get(int(p), T.MUTED)
+    return f"<span class='pg-chip' style='color:{c};background:{c}14;border:1px solid {c}55'>P{int(p)} {name}</span>"
+
+
 def _empty_state(pages):
     st.markdown("<div class='pg-card' style='text-align:center;padding:30px'><div style='font-size:2.2rem'>🧪</div>"
                 "<h3 style='color:#0b2e59;margin:6px 0'>No analyses yet</h3><p style='color:#5b6b82'>Analyze assets on the module pages "
@@ -80,11 +125,12 @@ def _tile(col, key, g, page):
 
 
 def _alerts(R, n=6):
-    X = R[R['Status'] != 'EXCELLENT'].head(n)
+    X = R[R['Priority'] <= 2].head(n)
     if X.empty:
-        return "<div class='pg-card'>No asset needs attention. ✅</div>"
-    rows = ''.join(f"<div class='pg-row'><div class='pg-dot' style='background:{COLORS[r['Status']]}'></div><div style='flex:1'>"
-                   f"<div class='t'>{A.TYPE_ICON.get(r['Type'], '📦')} {r['Name']} &nbsp;{T.chip(r['Status'], '%.0f%%' % r['Combined Risk (%)'])}</div>"
+        return "<div class='pg-card'>No asset at priority 1 or 2. ✅</div>"
+    rows = ''.join(f"<div class='pg-row'><div class='pg-dot' style='background:{PCOL[int(r['Priority'])]}'></div><div style='flex:1'>"
+                   f"<div class='t'>{A.TYPE_ICON.get(r['Type'], '📦')} {r['Name']} &nbsp;{_pchip(r['Priority'], r['Priority Name'])}"
+                   f"<span style='color:#5b6b82;font-size:.78rem'> &nbsp;likelihood {r['Likelihood']} × consequence {r['Consequence']} = {r['Score']}</span></div>"
                    f"<div class='s'>{r['Main Driver']}</div><div class='s' style='color:#14213d'>➜ {r['Action']}</div></div></div>" for _, r in X.iterrows())
     return f"<div class='pg-card'>{rows}</div>"
 
@@ -132,20 +178,20 @@ def command_center(pages):
     T.hero('PowerGuard AI Command Center', 'Asset Intelligence Platform · one view of transformers, reactors, GIS, cables, motors, relays and lines', now)
     source = _source_bar('cc')
     F = _data(source)
-    R = A.register(F)
+    R = _register(F, source)
     if F.empty:
         _empty_state(pages)
         return
 
-    n = len(R); act = int((R['Status'] == 'ACTION').sum()); wat = int((R['Status'] == 'WATCH').sum())
+    n = len(R); pc = {k: int((R['Priority'] == k).sum()) for k in (1, 2, 3, 4)}
     health = 100 - R['Combined Risk (%)'].mean() if n else 100
     inc = F[F['Module'] == 'FaultGuard']
     c = st.columns(6)
     T.kpi(c[0], 'Fleet health', f'{health:.0f}%', '100 − average risk', T.BLUE)
     T.kpi(c[1], 'Site assets', n, f"{len(F)} module results", T.NAVY)
-    T.kpi(c[2], 'Action', act, 'need action now', T.RED)
-    T.kpi(c[3], 'Watch', wat, 'trend and re-test', T.AMBER)
-    T.kpi(c[4], 'Normal', n - act - wat, 'no issue found', T.GREEN)
+    T.kpi(c[2], 'Priority 1', pc[1], 'critical: act within weeks', T.RED)
+    T.kpi(c[3], 'Priority 2', pc[2], 'high: plan within 3 months', '#ea580c')
+    T.kpi(c[4], 'Priority 3-4', pc[3] + pc[4], f'{pc[3]} monitor, {pc[4]} normal', T.GREEN)
     T.kpi(c[5], 'Trips analyzed', len(inc), f"{int((inc['Status'] == 'ACTION').sum())} need action" if len(inc) else 'FaultGuard', T.VIOLET)
 
     T.section('Modules', 'press a module to open it')
@@ -157,15 +203,15 @@ def command_center(pages):
 
     l, r = st.columns([1.05, 1])
     with l:
-        T.section('Priority alerts', 'site assets with the highest combined risk')
+        T.section('Priority alerts', 'priority 1 and 2: likelihood × consequence')
         st.markdown(_alerts(R), unsafe_allow_html=True)
         st.page_link(pages['asset360'], label='Open Asset 360', icon=':material/travel_explore:')
     with r:
-        T.section('Fleet picture', '')
-        tf = _treemap(R)
-        if tf is not None:
-            st.plotly_chart(tf, width='stretch', config={'displayModeBar': False})
-        st.plotly_chart(_status_fig(F), width='stretch', config={'displayModeBar': False})
+        T.section('Risk matrix', 'every site asset in its cell')
+        st.plotly_chart(RK.matrix_fig(R, 430, ''), width='stretch', config={'displayModeBar': False})
+        with st.expander('How the combined risk is found'):
+            st.markdown(RK_HELP)
+    st.plotly_chart(_status_fig(F), width='stretch', config={'displayModeBar': False})
 
     if len(inc):
         T.section('Latest trips and incidents', 'FaultGuard')
@@ -194,7 +240,7 @@ def command_center(pages):
     d1.download_button('📄 Fleet Status Report (PDF)', RP.fleet_pdf(F, R, SOURCES[source].split(' ', 1)[1]), 'PowerGuard_Fleet_Status_Report.pdf',
                        'application/pdf', width='stretch', type='primary')
     d2.download_button('📊 Module results (CSV)', F.to_csv(index=False).encode(), 'PowerGuard_Module_Results.csv', 'text/csv', width='stretch')
-    d3.download_button('🗂️ Site asset register (CSV)', R.to_csv(index=False).encode(), 'PowerGuard_Site_Assets.csv', 'text/csv', width='stretch')
+    d3.download_button('🗂️ Site asset register (CSV)', R.drop(columns=['Steps']).to_csv(index=False).encode(), 'PowerGuard_Site_Assets.csv', 'text/csv', width='stretch')
     st.markdown(T.FOOTER, unsafe_allow_html=True)
 
 
@@ -240,10 +286,10 @@ def _forecast_fig(fc, title):
 def asset360(pages):
     runner.enter('platform')
     ss = st.session_state
-    T.hero('Asset 360', 'Every module\'s view of one asset, with one combined risk', datetime.now().strftime('%A %d %B %Y'))
+    T.hero('Asset 360', 'Every module\'s view of one asset, with one combined risk (likelihood × consequence)', datetime.now().strftime('%A %d %B %Y'))
     source = _source_bar('a360')
     F = _data(source)
-    R = A.register(F)
+    R = _register(F, source)
     if R.empty:
         _empty_state(pages)
         return
@@ -258,7 +304,7 @@ def asset360(pages):
         prev = (rich if len(rich) else RR).iloc[0]['Site Asset']
     sid = c2.selectbox('Asset', opts, index=opts.index(prev) if prev in opts else 0, key='pg_a_sel',
                        format_func=lambda x: f"{A.TYPE_ICON.get(R.set_index('Site Asset').at[x, 'Type'], '📦')} {x} · {R.set_index('Site Asset').at[x, 'Name']}"
-                       f"  ({R.set_index('Site Asset').at[x, 'Combined Risk (%)']:.0f}%)")
+                       f"  (P{R.set_index('Site Asset').at[x, 'Priority']})")
     ss['pg_a_sel_v'] = sid
     a = R.set_index('Site Asset').loc[sid]
     rows = A.rows_of(F, sid)
@@ -268,12 +314,30 @@ def asset360(pages):
         st.markdown(f"<div class='pg-card' style='text-align:center'><div style='font-size:2.4rem'>{A.TYPE_ICON.get(a['Type'], '📦')}</div>"
                     f"<div style='font-weight:800;color:#0b2e59;font-size:1.15rem'>{a['Name']}</div><div style='color:#5b6b82;font-size:.85rem'>{a['Type']} · {sid}</div>"
                     f"<div style='margin-top:8px'>{T.chip(a['Status'])}</div></div>", unsafe_allow_html=True)
-        st.plotly_chart(_gauge(a['Combined Risk (%)'], a['Status']), width='stretch', config={'displayModeBar': False})
+        pcol = PCOL[int(a['Priority'])]
+        st.markdown(f"<div class='pg-card' style='text-align:center'><div style='font-size:.8rem;color:#5b6b82'>PRIORITY</div>"
+                    f"<div style='font-size:1.9rem;font-weight:800;color:{pcol}'>P{int(a['Priority'])} {a['Priority Name']}</div>"
+                    f"<div style='color:#14213d'>Likelihood <b>{a['Likelihood']}</b> ({RK.L_TEXT[int(a['Likelihood'])]}) × consequence "
+                    f"<b>{a['Consequence']}</b> ({RK.C_TEXT[int(a['Consequence'])]}) = <b>{a['Score']}</b> / 25</div></div>", unsafe_allow_html=True)
+        st.plotly_chart(RK.matrix_fig(R[R['Site Asset'] == sid], 280, '', compact=True), width='stretch', config={'displayModeBar': False})
+        crit = ss.setdefault('pg_crit', {})
+        opts_c = [None, 1, 2, 3, 4, 5]
+        cv = st.selectbox('Criticality of this asset (consequence)', opts_c, index=opts_c.index(crit.get(sid)),
+                          format_func=lambda v: f"Default ({a['Criticality']} {RK.C_TEXT[int(a['Criticality'])]})" if v is None else
+                          f"{v} {RK.C_TEXT[v]}" + (' (critical, e.g. interconnector)' if v == 5 else ''), key=f'pg_crit_{sid}',
+                          help='The engineer can mark an asset as more or less critical than the default for its type and voltage.')
+        if cv != crit.get(sid):
+            if cv is None:
+                crit.pop(sid, None)
+            else:
+                crit[sid] = cv
+            st.rerun()
         st.markdown(f"<div class='pg-card'><div style='font-size:.8rem;color:#5b6b82'>MAIN DRIVER</div><div style='font-weight:650'>{a['Main Driver']}</div>"
-                    f"<div style='font-size:.8rem;color:#5b6b82;margin-top:8px'>ACTION</div><div>{a['Action']}</div>"
-                    f"<div style='font-size:.75rem;color:#8a97ab;margin-top:10px'>Combined risk = highest module risk + 5% for every other module above 35%.</div></div>",
-                    unsafe_allow_html=True)
+                    f"<div style='font-size:.8rem;color:#5b6b82;margin-top:8px'>ACTION</div><div>{a['Action']}</div></div>", unsafe_allow_html=True)
     with r:
+        T.section('How the risk was found', 'likelihood × consequence')
+        st.markdown("<div class='pg-card'>" + ''.join(f"<div style='margin:4px 0'><b>{i + 1}.</b> {t}</div>" for i, t in enumerate(a['Steps']))
+                    + "</div>", unsafe_allow_html=True)
         T.section('What each module sees', f"{rows['Module'].nunique()} module(s)")
         if len(rows) > 1:
             fig = go.Figure(go.Bar(x=rows['Risk (%)'], y=rows['Module'] + ' · ' + rows['Asset ID'].astype(str), orientation='h',
@@ -303,11 +367,11 @@ def asset360(pages):
         c.page_link(pages[k], label=f'Open {m}', icon=FL.MODULE_INFO[k][1])
     extra = [(f"{rr['Module']} ({rr['Asset ID']})", f"Risk {rr['Risk (%)']:.0f}%. Driver: {rr['Main Driver']}. Action: {rr['Action']}")
              for _, rr in rows.iterrows()]
-    links[-1].download_button('📄 Asset 360 Report (PDF)', RP.asset_pdf(sid, a['Name'], a['Type'], rows, a['Combined Risk (%)'], a['Status'], extra),
+    links[-1].download_button('📄 Asset 360 Report (PDF)', RP.asset_pdf(sid, a['Name'], a['Type'], rows, a['Combined Risk (%)'], a['Status'], extra, a.to_dict()),
                               f'PowerGuard_Asset360_{sid}.pdf', 'application/pdf', type='primary', width='stretch')
     if source == 'demo':
         st.caption('Demo: the module demos are separate simulated substations; they are joined here by asset ID (T1 = TR-1 in GridGuard, '
-                   'L1-M1/M2 relays = Line 1) to show the combined view.')
+                   'L1-M1/M2 relays = Line 1) to show the combined view. The N-1 results of T1, T2, Line 1 and Line 2 are illustrative.')
     st.markdown(T.FOOTER, unsafe_allow_html=True)
 
 
@@ -330,7 +394,8 @@ risk scale (0-100 %, <b>NORMAL</b> ≤ 35 %, <b>WATCH</b> 35-70 %, <b>ACTION</b>
     st.markdown("""
 - **Command Center**: the fleet at a glance: health index, alerts, module status, latest trips, unified register and reports.
 - **Asset 360**: one asset seen by every module (for example a transformer: DGA and thermal, load forecast, partial discharge, its protection relays),
-  with a combined risk = highest module risk + 5 % for every other module above 35 %.
+  with a combined risk = likelihood × consequence (5 × 5 risk matrix, ISO 55000 / IEC 31010): see *How the combined risk is found* on the
+  Command Center.
 - **Modules**: each module keeps its own pages (overview, analysis, combined report, history) and downloads (PDF, CSV).
 - **Data source**: *Demo substation* (simulated, anonymised) or *My analyses* (the results analyzed on the module pages in this session).
 """)

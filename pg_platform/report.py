@@ -95,10 +95,10 @@ def fleet_pdf(F, R, source_label, site='Demo substation'):
     W = doc.width
     now = datetime.now().strftime('%d %b %Y %H:%M')
     s = [_header('Fleet Status Report', f'{site}  ·  Source: {source_label}  ·  Issued {now}'), Spacer(1, 8)]
-    n = len(R); act = int((R['Status'] == 'ACTION').sum()); wat = int((R['Status'] == 'WATCH').sum())
+    n = len(R); pc = {k: int((R['Priority'] == k).sum()) for k in (1, 2, 3, 4)}
     health = round(100 - R['Combined Risk (%)'].mean(), 1) if n else 100
-    s.append(_kpis([('Site assets', n, '#0b2e59'), ('Action', act, '#dc2626'), ('Watch', wat, '#e6a100'), ('Normal', n - act - wat, '#16a34a'),
-                    ('Fleet health index', f'{health}%', '#2f80ed'), ('Module results', len(F), '#0b2e59')], W))
+    s.append(_kpis([('Site assets', n, '#0b2e59'), ('Priority 1 critical', pc[1], '#dc2626'), ('Priority 2 high', pc[2], '#ea580c'),
+                    ('Priority 3 monitor', pc[3], '#e6a100'), ('Priority 4 normal', pc[4], '#16a34a'), ('Fleet health index', f'{health}%', '#2f80ed')], W))
     s.append(Paragraph('Status by module', H2))
     rows = []
     for m, g in F.groupby('Module'):
@@ -106,38 +106,52 @@ def fleet_pdf(F, R, source_label, site='Demo substation'):
         rows.append({'Module': m, 'Results': len(g), 'Action': int((g['Status'] == 'ACTION').sum()), 'Watch': int((g['Status'] == 'WATCH').sum()),
                      'Normal': int((g['Status'] == 'EXCELLENT').sum()), 'Highest risk': f"{w['Asset ID']} ({w['Risk (%)']:.0f}%)", 'Main driver': w['Main Driver']})
     s.append(_table(pd.DataFrame(rows), [W * x for x in (.14, .07, .07, .07, .07, .16, .42)]))
-    A = R[R['Status'] != 'EXCELLENT'][['Site Asset', 'Name', 'Modules', 'Combined Risk (%)', 'Status', 'Main Driver', 'Action']]
-    s.append(Paragraph(f'Assets needing attention ({len(A)})', H2))
-    s.append(_table(A, [W * x for x in (.07, .15, .17, .07, .07, .22, .25)], status_col='Status') if len(A) else Paragraph('No asset needs attention.', TXT))
+    RR = R.assign(**{'L x C': [f"{l} x {c} = {l * c}" for l, c in zip(R['Likelihood'], R['Consequence'])],
+                     'Priority ': [f"P{p} {n_}" for p, n_ in zip(R['Priority'], R['Priority Name'])]})
+    A = RR[RR['Priority'] <= 2][['Site Asset', 'Name', 'L x C', 'Priority ', 'Status', 'Main Driver', 'Action']]
+    s.append(Paragraph(f'Assets needing attention: priority 1 and 2 ({len(A)})', H2))
+    s.append(_table(A, [W * x for x in (.07, .14, .07, .08, .06, .27, .31)], status_col='Status') if len(A) else Paragraph('No asset needs attention.', TXT))
     s.append(Paragraph('Site asset register', H2))
-    s.append(_table(R[['Site Asset', 'Name', 'Type', 'Modules', 'Combined Risk (%)', 'Status', 'Main Driver']],
-                    [W * x for x in (.08, .19, .08, .25, .08, .08, .24)], status_col='Status'))
+    s.append(_table(RR[['Site Asset', 'Name', 'Type', 'Modules', 'L x C', 'Priority ', 'Status', 'Main Driver']],
+                    [W * x for x in (.08, .16, .08, .2, .07, .08, .07, .26)], status_col='Status'))
     I = F[F['Module'] == 'FaultGuard']
     if len(I) and 'Incident' in I:
         s.append(Paragraph('Trips and incidents (FaultGuard)', H2))
         cols = [c for c in ['Incident', 'Date', 'Asset ID', 'Fault Type', 'Risk (%)', 'Status', 'Summary'] if c in I]
         s.append(_table(I[cols], [W * x for x in (.07, .09, .07, .07, .06, .07, .57)][:len(cols)], status_col='Status'))
     s.append(Spacer(1, 8))
-    s.append(Paragraph('Combined risk of a site asset = highest module risk + 5 % for every other module above 35 %. '
-                       'NORMAL ≤ 35 %, WATCH 35-70 %, ACTION > 70 %.', SUB))
+    s.append(Paragraph(RISK_NOTE, SUB))
     doc.build(s, onFirstPage=_page, onLaterPages=_page)
     return buf.getvalue()
 
 
-def asset_pdf(sid, name, typ, rows, cr, status, extra=None):
+RISK_NOTE = ('Combined risk of a site asset = likelihood x consequence (5 x 5 matrix, ISO 55000 / IEC 31010). Likelihood from the highest condition '
+             'risk, one step higher when two modules see the same failure mechanism; consequence from the asset criticality, the N-1 impact of its '
+             'outage (NetworkGuard) and the readiness of its protection (RelayGuard, FaultGuard). Priority 1: 15-25, 2: 10-14, 3: 5-9, 4: 1-4.')
+
+
+def asset_pdf(sid, name, typ, rows, cr, status, extra=None, risk=None):
     """Asset 360 Report of one site asset. rows: its module results."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm, bottomMargin=14 * mm,
                             title=f'Asset 360 Report - {sid}')
     W = doc.width
     s = [_header(f'Asset 360 Report: {name}', f"{typ}  ·  Site asset {sid}  ·  Issued {datetime.now().strftime('%d %b %Y %H:%M')}"), Spacer(1, 8)]
-    s.append(_kpis([('Combined risk', f'{cr:.0f}%', '#dc2626' if status == 'ACTION' else ('#e6a100' if status == 'WATCH' else '#16a34a')),
-                    ('Status', ST_LAB.get(status, status), '#0b2e59'), ('Modules', rows['Module'].nunique(), '#2f80ed')], W))
+    col = '#dc2626' if status == 'ACTION' else ('#e6a100' if status == 'WATCH' else '#16a34a')
+    if risk is not None:
+        s.append(_kpis([('Priority', f"P{risk['Priority']} {risk['Priority Name']}", col), ('Likelihood', risk['Likelihood'], '#0b2e59'),
+                        ('Consequence', risk['Consequence'], '#0b2e59'), ('Risk score', f"{risk['Score']} / 25", col),
+                        ('Modules', rows['Module'].nunique(), '#2f80ed')], W))
+        s.append(Paragraph('How the risk was found', H2))
+        for i, t in enumerate(risk['Steps']):
+            s.append(Paragraph(f'{i + 1}. {t}', TXT))
+    else:
+        s.append(_kpis([('Combined risk', f'{cr:.0f}%', col), ('Status', ST_LAB.get(status, status), '#0b2e59'), ('Modules', rows['Module'].nunique(), '#2f80ed')], W))
     s.append(Paragraph('Module results', H2))
     s.append(_table(rows[['Module', 'Asset ID', 'Risk (%)', 'Status', 'Main Driver', 'Action']], [W * x for x in (.15, .1, .08, .1, .27, .3)], status_col='Status'))
     for title, text in (extra or []):
         s.append(KeepTogether([Paragraph(title, H2), Paragraph(text, TXT)]))
     s.append(Spacer(1, 8))
-    s.append(Paragraph('Combined risk = highest module risk + 5 % for every other module above 35 %.', SUB))
+    s.append(Paragraph(RISK_NOTE, SUB))
     doc.build(s, onFirstPage=_page, onLaterPages=_page)
     return buf.getvalue()
