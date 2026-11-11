@@ -228,7 +228,7 @@ def _strs(P):
 
 
 def guess_line(sts, data):
-    """The line a settings file belongs to, from its description (e.g. '21A SILAA L12'): best matching line name."""
+    """The line a settings file belongs to, from its description (e.g. '21A NORTH L12'): best matching line name."""
     ln, sc_ = ng.match_line(sts.get('description') or '', data)
     if ln and sc_ >= 2:
         return ln
@@ -245,7 +245,7 @@ def guess_line(sts, data):
 
 
 def guess_bus(sts, ends):
-    """The line end of the relay: the end whose name appears in the relay description (e.g. '21A SILAA L12' -> Silla)."""
+    """The line end of the relay: the end whose name appears in the relay description (e.g. '21A NORTH L12' -> North)."""
     toks = [t for t in re.split(r'[^A-Z]+', (sts.get('description') or '').upper()) if len(t) >= 3]
     for e in ends:
         name = re.sub(r'[^A-Z]', '', e.upper())
@@ -399,7 +399,7 @@ def _compact(name):
 
 def sld_from_pdf(data):
     """Network proposal from a single-line diagram drawing: substations (name and voltages), circuits from the circuit names
-    (e.g. 41_SALWA_SILLA = circuit 1 Salwa-Silla), shunt reactors (RB/RL), power transformers (T4xx), neighbouring grids
+    (e.g. 41_EAST_NORTH = circuit 1 East-North), shunt reactors (RB/RL), power transformers (T4xx), neighbouring grids
     (circuits to stations outside the drawing, connections to other networks) and HVDC converters.
     Returns (tables, log, page png)."""
     words, W, H, png, how = _words(data)
@@ -418,7 +418,7 @@ def sld_from_pdf(data):
                     kv = [float(mm.group(1))] + ([float(mm.group(2))] if mm.group(2) else [])
             name = re.sub(r'\s+', ' ', m.group(1).strip()).title()
             subs.append({'name': name, 'x': cx, 'y': cy, 'kv': kv or [400.0], 'codes': set(), 'compact': _compact(m.group(1))})
-    # code labels such as 4SALWA under the name
+    # code labels such as 4EAST under the name
     for w in words:
         mm = re.fullmatch(r'\d([A-Z]{3,8})', w[0].strip())
         if mm and not mm.group(1).startswith('HVDC'):
@@ -473,7 +473,7 @@ def sld_from_pdf(data):
                 continue
             ext.setdefault((inside['name'], other), []).append(pos)
     # neighbouring grids: country written under the nearest 'CONNECTION TO' text
-    countries = [w for w in words if re.fullmatch(r'(KUWAIT|IRAQ|UAE|QATAR|BAHRAIN|KSA|SAUDI ARABIA|OMAN|[A-Z ]+-QATAR)', w[0].strip().upper())]
+    countries = [w for w in words if re.fullmatch(r'(KUWAIT|IRAQ|UAE|QATAR|BAHRAIN|KSA|SAUDI ARABIA|OMAN|[A-Z ]+-(?:KUWAIT|IRAQ|UAE|QATAR|BAHRAIN|KSA|OMAN))', w[0].strip().upper())]
     def country_near(x, y):
         if not countries:
             return ''

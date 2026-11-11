@@ -312,8 +312,8 @@ with tabs[1]:
     D = data()
     how = st.radio('How do you want to enter the single-line diagram?', ['📄 From a PDF drawing', '✏️ Step by step', '📊 From an Excel file'], horizontal=True, key='sld_how')
     if how.startswith('📄'):
-        st.markdown("<div class='pg-note'>The drawing is read for substation names and voltages, circuit names (for example <b>41_SALWA_SILLA</b> = circuit 1 "
-                    "Salwa-Silla), shunt reactors (RB/RL), power transformers (T4xx), neighbouring grids and HVDC converters. Check and correct the "
+        st.markdown("<div class='pg-note'>The drawing is read for substation names and voltages, circuit names (for example <b>41_EAST_NORTH</b> = circuit 1 "
+                    "East-North), shunt reactors (RB/RL), power transformers (T4xx), neighbouring grids and HVDC converters. Check and correct the "
                     "proposal below, then press <b>Use this network</b>. A scanned drawing is read by OCR.</div>", unsafe_allow_html=True)
         up = st.file_uploader('Single-line diagram (PDF or picture)', type=['pdf', 'png', 'jpg', 'jpeg'], key='sld_pdf')
         if up is not None and st.button('🔎 Read the drawing', type='primary', key='sld_read'):
