@@ -374,11 +374,18 @@ def filled(data):
     return d, notes
 
 
-def missing_required(data):
-    """Required values that are empty (no typical value exists)."""
+STUDY_SKIP = {'pf': {('Grids', 'Sk max MVA'), ('Grids', 'Sk min MVA')}}   # load flow and voltage drop do not use the fault levels
+
+
+def missing_required(data, study='all'):
+    """Required values that are empty (no typical value exists). study 'pf' (load flow, voltage drop, N-1) leaves out the values
+    only the fault studies use; relay values are needed only by the protection and fault studies."""
     d = clean(data)
     out = []
+    skip = STUDY_SKIP.get(study, set())
     for k, sch in SCHEMA.items():
+        if k == 'Relays' and study in ('pf', 'sc'):
+            continue
         idc = id_col(k)
         for f, (u, dsc, typ, kind) in sch.items():
             if typ is not None or kind == 'id' or f in LINE_COMPUTED:
@@ -389,6 +396,8 @@ def missing_required(data):
                 m = d[k][f].isna()
             else:
                 m = d[k][f].isna() if kind == 'num' else (d[k][f] == '')
+            if (k, f) in skip:
+                continue
             for e in d[k].loc[m, idc]:
                 out.append((k, e, f))
     return out

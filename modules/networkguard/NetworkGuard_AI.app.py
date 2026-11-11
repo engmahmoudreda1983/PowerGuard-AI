@@ -254,8 +254,14 @@ def view3d(d, key, lf=None, fs=None, start='network', label='🧊 3D view', open
                            f"{ss['names'][ss['ws']].replace(' ', '_')}_3D_{start}.html", 'text/html', key=key + '_dl')
 
 
-def ready():
-    """True when the network can be analysed; otherwise says what is missing."""
+WHERE = {'Grids': 'the neighbouring grids (Short circuit page: "Grid short-circuit power from disturbance records" measures them from real faults)',
+         'Lines': 'the lines (the relay settings files give the length and impedances: Equipment Data, "From relay settings files")',
+         'Reactors': 'the reactors (rating on the nameplate or in the reactor protection settings)',
+         'Transformers': 'the transformers (nameplate or test report: Equipment Data, "From transformer / reactor documents")'}
+
+
+def ready(study='all', page=''):
+    """True when the network can be analysed for this study; otherwise it says what is missing and opens the table to fill it here."""
     d = data()
     if not len(d['Buses']):
         st.info('The network is empty. Build it on the 🗺️ Single-Line Diagram page first' + (' or switch to the demo network.' if ss['ws'] == 'real' else '.'))
@@ -264,14 +270,47 @@ def ready():
     if errs:
         st.error('Fix these on the data pages first:  \n' + '  \n'.join(errs[:10]))
         return False
-    miss = ng.missing_required(d)
-    if miss:
-        M = pd.DataFrame(miss, columns=['Table', 'Equipment', 'Parameter'])
-        st.warning(f"{len(miss)} required value(s) are still missing, so the analysis cannot run yet. Enter them on the 📋 Equipment Data page "
-                   "(form, Excel form or relay settings files):  \n" +
-                   '  \n'.join(f"• {r.Table} – {r.Parameter}: {r.n} item(s)" for r in M.groupby(['Table', 'Parameter']).size().reset_index(name='n').itertuples()))
+    if ng.missing_required(d, study):
+        if ss.get(f'fix_{page}') != study:
+            ss[f'fix_{page}'] = study
+            st.rerun()                                       # the page opens the missing values to fill
         return False
     return True
+
+
+def fix_panel(page):
+    """After an analysis could not run: the missing values in tables to fill right here (also on the Equipment Data page)."""
+    study = ss.get(f'fix_{page}')
+    if not study:
+        return
+    d = data()
+    miss = ng.missing_required(d, study)
+    if not miss:
+        ss.pop(f'fix_{page}', None); return
+    M = pd.DataFrame(miss, columns=['Table', 'Equipment', 'Parameter'])
+    with st.container(border=True):
+        st.warning(f"{len(miss)} required value(s) are missing, so this analysis cannot run yet. Fill them in the tables below and press "
+                   "**Save**, or on the 📋 Equipment Data page (form, Excel form or relay settings files).")
+        edits = {}
+        for k, g in M.groupby('Table', sort=False):
+            idc = ng.id_col(k)
+            fields = list(dict.fromkeys(g['Parameter']))
+            T = d[k]
+            sub = T.loc[T[idc].isin(set(g['Equipment'])), [idc] + [c for c in ('Bus', 'From Bus', 'To Bus') if c in T.columns and c not in fields] + fields]
+            st.markdown(f"**{ng.ICON.get(k, '')} {k}** – {len(sub)} item(s): {WHERE.get(k, '')}")
+            cfg = {f: st.column_config.NumberColumn(f, help=ng.SCHEMA[k][f][1]) for f in fields if ng.SCHEMA[k][f][3] == 'num'}
+            edits[k] = (idc, fields, st.data_editor(sub.reset_index(drop=True), key=f'fix_{page}_{k}', hide_index=True, width=STRETCH,
+                                                    disabled=[c for c in sub.columns if c not in fields], column_config=cfg))
+        if st.button('💾 Save these values', type='primary', key=f'fix_save_{page}'):
+            d2 = {k: v.copy() for k, v in d.items()}
+            for k, (idc, fields, ed) in edits.items():
+                T = d2[k].set_index(idc)
+                for _, r in ed.iterrows():
+                    for f in fields:
+                        if pd.notna(r[f]) and r[f] != '':
+                            T.at[r[idc], f] = r[f]
+                d2[k] = T.reset_index()
+            set_data(d2); st.rerun()
 
 
 # ---------------------------------------------------------------- network selector
@@ -815,7 +854,8 @@ with tabs[3]:
         if ref != now:
             set_data(ng.set_slack(D, ref)); D = data()
     scale, outs, roff, warn = lf_inputs('lf')
-    if st.button('⚡ Analyze load flow', type='primary', key='lf_go') and ready():
+    fix_panel('lf')
+    if st.button('⚡ Analyze load flow', type='primary', key='lf_go') and ready('pf', 'lf'):
         with st.spinner('Newton-Raphson load flow...'):
             try:
                 set_res(lf=ng.load_flow(D, scale, outs, roff, warn))
@@ -844,7 +884,8 @@ with tabs[4]:
     demo_note()
     scale, outs, roff, warn = lf_inputs('vd')
     lim = st.number_input('Voltage drop limit along a circuit (%)', 0.5, 15.0, 3.0, 0.5, key='vd_lim')
-    if st.button('📉 Analyze voltage drop', type='primary', key='vd_go') and ready():
+    fix_panel('vd')
+    if st.button('📉 Analyze voltage drop', type='primary', key='vd_go') and ready('pf', 'vd'):
         with st.spinner('Load flow and voltage drop...'):
             try:
                 lf = ng.load_flow(D, scale, outs, roff, warn); set_res(lf=lf, vd=ng.voltage_drop(lf, lim))
@@ -957,7 +998,8 @@ with tabs[5]:
     c1, c2 = st.columns(2)
     case = c1.radio('Case (IEC 60909)', ['max', 'min'], horizontal=True, format_func=lambda x: 'Maximum (c = 1.1, breaker duty)' if x == 'max' else 'Minimum (c = 1.0, protection sensitivity)', key='sc_case')
     fb = c2.selectbox('Fault location for the branch currents', BUSES, index=BUSES.index('CJ-400') if 'CJ-400' in BUSES else 0, key='sc_bus') if BUSES else None
-    if st.button('💥 Analyze short circuit', type='primary', key='sc_go') and ready():
+    fix_panel('sc')
+    if st.button('💥 Analyze short circuit', type='primary', key='sc_go') and ready('sc', 'sc'):
         with st.spinner('IEC 60909 three-phase and single-phase faults at every bus...'):
             try:
                 set_res(sc=ng.short_circuit(D, case, fb))
@@ -1001,7 +1043,8 @@ with tabs[5]:
 with tabs[6]:
     demo_note()
     cti = st.number_input('Coordination time interval (s)', 0.1, 0.6, 0.3, 0.05, key='pr_cti')
-    if st.button('🛡️ Analyze protection coordination', type='primary', key='pr_go') and ready():
+    fix_panel('pr')
+    if st.button('🛡️ Analyze protection coordination', type='primary', key='pr_go') and ready('all', 'pr'):
         with st.spinner('Faults at every bus, relay operating times and zone checks...'):
             try:
                 set_res(prot=ng.protection(D, cti))
@@ -1043,7 +1086,8 @@ with tabs[7]:
     c1, c2 = st.columns(2)
     sc_ = c1.number_input('Load scaling (%)', 10.0, 200.0, 100.0, 5.0, key='ct_scale') / 100
     wl = c2.number_input('Loading warning (%)', 50.0, 100.0, 80.0, 5.0, key='ct_warn')
-    if st.button('🔁 Analyze N-1 contingency', type='primary', key='ct_go') and ready():
+    fix_panel('ct')
+    if st.button('🔁 Analyze N-1 contingency', type='primary', key='ct_go') and ready('pf', 'ct'):
         with st.spinner('One load flow per outage...'):
             try:
                 set_res(cont=ng.contingency(D, sc_, wl))
@@ -1208,7 +1252,8 @@ with tabs[8]:
         typ = c3.selectbox('Fault type (faulted phases)', FT, index=FT.index(ft0),
                            format_func=lambda k: f"{k} · {ng.FAULT_NAME[ng.PHASE_FAULTS[k][0]]}", key=f"fs_t_{ft0}")
         rf = c4.number_input('Fault resistance (Ω)', 0.0, 300.0, 0.0, 1.0, key='fs_rf')
-        if st.button('⚡ Apply the fault to the network', type='primary', key='fs_go') and ready():
+        fix_panel('fs')
+        if st.button('⚡ Apply the fault to the network', type='primary', key='fs_go') and ready('all', 'fs'):
             with st.spinner('Short circuit on the whole network, relay operation and tripping sequence...'):
                 try:
                     set_res(fs=ng.fault_analysis(D, ln, dk, typ, rf))
@@ -1255,7 +1300,8 @@ with tabs[9]:
     c1, c2 = st.columns(2)
     eng = c1.text_input('Prepared by', key='rp_eng')
     ttl = c2.text_input('Report title', 'Network Study Report', key='rp_title')
-    if st.button('▶️ Run all analyses', type='primary', key='rp_all') and ready():
+    fix_panel('rp')
+    if st.button('▶️ Run all analyses', type='primary', key='rp_all') and ready('all', 'rp'):
         with st.spinner('Load flow, voltage drop, short circuit, protection and N-1...'):
             try:
                 lf = ng.load_flow(D)
