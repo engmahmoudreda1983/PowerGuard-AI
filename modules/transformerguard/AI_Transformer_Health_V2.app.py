@@ -59,7 +59,7 @@ for key, default in [('logged_in', False), ('latest_eval', None), ('history', No
         st.session_state[key] = default
 
 if not st.session_state['logged_in']:
-    st.markdown("<br><br><h1 style='text-align:center;color:#4da6ff;'>⚡ PowerGuard AI Login</h1>", unsafe_allow_html=True)
+    st.markdown("<br><br><h1 style='text-align:center;color:#4da6ff;'>⚡ TransformerGuard AI Login</h1>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
         with st.form("login_form"):
