@@ -642,6 +642,62 @@ def fg_engine():
     return fg, fg.load_model(pg_paths.model('faultguard_model.pkl'))
 
 
+def faultguard_records(incident):
+    """Disturbance records of a FaultGuard incident (platform, same session)."""
+    try:
+        return (ss.get('_pg_store', {}).get('faultguard', {}).get('incident_records') or {}).get(incident) or []
+    except Exception:
+        return []
+
+
+def calibrate_from_records(recs, line, label, redo=None):
+    """Every fault is also a measurement of the network: the source impedance at each recording end of the faulted circuit
+    gives the grid short-circuit power. The fitted grid values are offered to the user (ss['fs_cal'])."""
+    ss.pop('fs_cal', None)
+    if not recs or line not in set(D['Lines']['Line']):
+        return
+    Lrow = ng.filled(D)[0]['Lines'].set_index('Line').loc[line].to_dict()
+    meas = []
+    for n, rec in recs:
+        try:
+            r = ng.record_source(rec)
+        except Exception:
+            continue
+        side = end_of(r['station'] or n, Lrow)
+        if side:
+            meas.append({'name': f"{r['station'] or n}", 'bus': Lrow['From Bus' if side == 'from' else 'To Bus'], 'line': line, 'Z1': r['Z1'], 'Z0': r['Z0']})
+    grids = [g for g in D['Grids']['Grid'] if not str(g).startswith(ng.REF_PREFIX)]
+    if not meas or not grids:
+        return
+    try:
+        new, T, f = ng.fit_grids(D, meas, grids)
+        ss['fs_cal'] = {'new': new, 'T': T, 'f': f, 'label': label, 'redo': redo}
+    except Exception:
+        pass
+
+
+def show_calibration():
+    cal = ss.get('fs_cal')
+    if not cal:
+        return
+    with st.container(border=True):
+        st.markdown(f"##### 📼 Grid short-circuit power measured from this fault ({cal['label']})")
+        st.caption('The fault-caused voltage and current at each recording end give the network behind it (V2 = −Zs·I2). '
+                   f"Matching the model needs short-circuit power × {cal['f']['Sk factor']} and X0/X1 × {cal['f']['X0/X1 factor']} for the grids.")
+        st.dataframe(cal['T'], width=STRETCH, hide_index=True)
+        c1, c2 = st.columns(2)
+        if c1.button('✅ Update the grid values' + (' and redo the fault' if cal.get('redo') else ''), type='primary', key='fs_cal_yes'):
+            set_data(cal['new']); ss.pop('fs_cal', None)
+            if cal.get('redo'):
+                try:
+                    set_res(fs=ng.fault_analysis(data(), *cal['redo']))
+                except Exception as e:
+                    st.error(f'Fault analysis failed: {e}')
+            st.rerun()
+        if c2.button('Keep the current grid values', key='fs_cal_no'):
+            ss.pop('fs_cal', None); st.rerun()
+
+
 def read_record_files(files, fg):
     import zipfile as _z
     by = {}
@@ -1000,6 +1056,8 @@ with tabs[8]:
                         set_res(fs=ng.fault_analysis(D, ln, dk_, ft_, 0.0))
                     except Exception as e:
                         st.error(f'Fault analysis failed: {e}')
+                    with st.spinner('Measuring the grid short-circuit power from the fault records...'):
+                        calibrate_from_records(faultguard_records(r.get('Incident')), ln, f"FaultGuard incident {r.get('Incident', '')}", (ln, dk_, ft_, 0.0))
                     st.rerun()
         elif src.startswith('📂'):
             c1, c2 = st.columns(2)
@@ -1053,12 +1111,14 @@ with tabs[8]:
                                                 'note': f"Records: {', '.join(n for n, _ in recs)}. FaultGuard: {a.get('type')} fault, "
                                                         f"{a.get('I_fault_max_kA', 0):.2f} kA, {('%.1f km from ' % loc + str(rec.get('station') or 'the recording end')) if loc is not None else 'not located'}."
                                                         + ''.join(f" {s.title()} end ({v[2]}): {v[0]:.2f} kA." for s, v in ends.items())}
+                                calibrate_from_records(recs, ln, 'uploaded records')
                                 st.rerun()
                             except Exception as e:
                                 st.error(f'Could not analyse the records: {e}')
         pre = ss.get('fs_pre', {})
         if pre.get('note'):
             st.info(pre['note'])
+        show_calibration()
         st.markdown('##### Fault applied to the network')
         FT = list(ng.PHASE_FAULTS)
         ft0 = str(pre.get('type', 'AG')).upper().replace('-', '').replace(' ', '').replace('PHASE', '')
