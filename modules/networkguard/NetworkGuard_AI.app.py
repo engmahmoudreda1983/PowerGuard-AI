@@ -234,6 +234,26 @@ def sld(d, key, **kw):
         pass
 
 
+def view3d(d, key, lf=None, fs=None, start='network', label='🧊 3D view', open_=False):
+    """The network in 3D (three.js, runs in the browser, no internet needed), with the load flow or the fault playback."""
+    import streamlit.components.v1 as components
+    import networkguard_3d as n3d
+    if not len(d['Buses']):
+        return
+    with st.expander(label, expanded=open_):
+        try:
+            h = n3d.html(d, lf, fs, ss['names'][ss['ws']], {'network': 'Network', 'lf': 'Load flow', 'fault': 'Fault playback'}.get(start, ''), start=start)
+        except Exception as e:
+            st.warning(f'The 3D view could not be built: {e}')
+            return
+        if hasattr(st, 'iframe'):
+            st.iframe(h, height=720)
+        else:                                    # older Streamlit
+            components.html(h, height=720, scrolling=False)
+        st.download_button('⬇️ 3D view (HTML file, opens in any browser without internet)', h.encode('utf-8'),
+                           f"{ss['names'][ss['ws']].replace(' ', '_')}_3D_{start}.html", 'text/html', key=key + '_dl')
+
+
 def ready():
     """True when the network can be analysed; otherwise says what is missing."""
     d = data()
@@ -430,6 +450,7 @@ with tabs[1]:
             except Exception as e:
                 st.error(f'Could not read the file: {e}')
         st.plotly_chart(npl.sld_figure(D, height=560), width=STRETCH, key='xl_sld')
+    view3d(data(), 'sld3d', lf=res().get('lf'), label='🧊 3D view of the network (rotate, zoom, point at any item)')
     with st.expander('⚠️ Clear this network'):
         if st.button('Delete all equipment of this network', key='clear_net'):
             set_data(ng.demo() if ss['ws'] == 'demo' else ng.clean(ng.empty())); st.rerun()
@@ -602,6 +623,7 @@ with tabs[3]:
         kpis([('Losses', f"{sm['Losses (MW)']} MW"), ('Losses %', f"{sm['Losses (%)']}%"), ('Min V', f"{sm['Min V (pu)']:.3f} pu"), ('Max V', f"{sm['Max V (pu)']:.3f} pu"),
               ('Max line loading', f"{sm['Max Line Loading (%)']:.0f}%"), ('Line charging', f"{sm['Line Charging (MVAr)']:.0f} MVAr"), ('Reactors', f"{sm['Reactors (MVAr)']:.0f} MVAr")])
         sld(D, 'lf_sld', lf=lf, mode='lf', height=620)
+        view3d(D, 'lf3d', lf=lf, start='lf', label='🧊 Load flow in 3D (power flow along the lines, bus voltages)')
         st.markdown('##### Bus voltages'); show(lf['bus']); csv_button(lf['bus'], 'load_flow_buses.csv')
         st.markdown('##### Circuits'); show(lf['line'].drop(columns=['In Service'])); csv_button(lf['line'], 'load_flow_circuits.csv')
         if len(lf['trafo']):
@@ -837,11 +859,28 @@ with tabs[8]:
                 r = I.iloc[k]
                 ln, sc_ = ng.match_line(r.get('Line', ''), D)
                 loc = _num(r.get('Location (km)')) if 'Location (km)' in r else _num(r.get('Location'))
-                if st.button('Use this incident', key='fs_use_inc'):
-                    ss['fs_pre'] = {'line': ln, 'd_km': loc, 'type': str(r.get('Fault Type', '') or 'AG').upper(),
-                                    'I_from': _num(r.get('Fault Current (kA)')), 'I_to': None, 'note': f"From FaultGuard incident {r.get('Incident', '')}: "
-                                    f"line '{r.get('Line', '')}' matched to {ln}; the fault current is the recording relay's current, set at the From end - move it if the "
-                                    "record was taken at the other end."}
+                ln = st.selectbox('Line of the network', LINES, index=LINES.index(ln) if ln in LINES else 0, key=f"fs_inc_line_{k}",
+                                  help='Matched from the station names in the FaultGuard incident; change it if needed.')
+                if st.button('⚡ Apply this incident to the network', type='primary', key='fs_use_inc'):
+                    Lrow = ng.filled(D)[0]['Lines'].set_index('Line').loc[ln]
+                    Lkm = float(Lrow['Length km']) if pd.notna(Lrow['Length km']) else None
+                    endA = str(r.get('End A', '') or '').strip() or str(r.get('Station', '') or '').split('/')[0].strip()
+                    side = end_of(endA, Lrow.to_dict()) if endA else None          # FaultGuard measures the location from End A
+                    d_from = (Lkm - loc) if (loc is not None and Lkm and side == 'to') else loc
+                    I_ = _num(r.get('Fault Current (kA)'))
+                    ft = str(r.get('Fault Type', '') or 'AG').upper()
+                    ss['fs_pre'] = {'line': ln, 'd_km': d_from, 'type': ft, 'I_from': I_ if side != 'to' else None, 'I_to': I_ if side == 'to' else None,
+                                    'note': f"From FaultGuard incident {r.get('Incident', '')}: line '{r.get('Line', '')}' matched to {ln}. "
+                                            + (f"FaultGuard location {loc:.1f} km from {endA} = {d_from:.1f} km from {Lrow['From Bus']}. " if loc is not None and d_from is not None else 'No location in FaultGuard: the fault is put at mid-line. ')
+                                            + ('' if side else f"The station '{endA}' was not found at either end of {ln}: the location is taken from {Lrow['From Bus']}; check it.")}
+                    FT_ = list(ng.PHASE_FAULTS)
+                    ft_ = ft.replace('-', '').replace(' ', '')
+                    ft_ = ft_ if ft_ in FT_ else 'AG'
+                    dk_ = float(min(max(d_from if d_from is not None else (Lkm or 100.0) / 2, 0.0), Lkm or 1e9))
+                    try:
+                        set_res(fs=ng.fault_analysis(D, ln, dk_, ft_, 0.0))
+                    except Exception as e:
+                        st.error(f'Fault analysis failed: {e}')
                     st.rerun()
         elif src.startswith('📂'):
             c1, c2 = st.columns(2)
@@ -926,6 +965,7 @@ with tabs[8]:
                  + [('Cleared in', f"{clr * 1000:.0f} ms" if clr == clr and clr is not None else 'not cleared')])
             for n in fs['notes']:
                 st.markdown(f"<div class='pg-note'>{n}</div>", unsafe_allow_html=True)
+            view3d(D, 'fs3d', lf=res().get('lf'), fs=fs, start='fault', label='🧊 Fault playback in 3D (fault, currents, voltage dips, tripping sequence)', open_=True)
             st.plotly_chart(npl.sld_figure(D, fault_line=(fs['line'], fs['pos']), height=560), width=STRETCH, key='fs_sld')
             st.markdown('##### Sequence of tripping')
             if len(fs['sequence']):

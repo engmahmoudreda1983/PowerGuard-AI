@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ · NetworkGuard AI 3D</title>
+<style>
+:root{--bg:#0b1220;--panel:rgba(13,22,38,.86);--line:rgba(148,163,184,.22);--txt:#e2e8f0;--mut:#94a3b8;--acc:#38bdf8;--red:#ef4444;--amb:#f59e0b;--grn:#22c55e}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;overflow:hidden}
+#view{position:absolute;inset:0}
+canvas{display:block;outline:none}
+.panel{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(6px);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+#head{left:12px;top:12px;padding:10px 14px;max-width:min(560px,calc(100% - 24px))}
+#head h1{margin:0;font-size:16px;font-weight:650;letter-spacing:.2px}
+#head .sub{color:var(--mut);margin-top:2px}
+#kpi{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.k{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+.k b{display:block;font-size:14px}
+.k span{color:var(--mut);font-size:11px}
+#tools{right:12px;top:12px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100% - 24px);justify-content:flex-end}
+button,.seg button{background:rgba(255,255,255,.06);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+button:hover{background:rgba(56,189,248,.16)}
+button.on{background:rgba(56,189,248,.28);border-color:rgba(56,189,248,.6)}
+#legend{left:12px;bottom:12px;padding:10px 12px;max-width:300px}
+#legend h3,#log h3{margin:0 0 6px;font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+.sw{display:inline-block;width:18px;height:6px;border-radius:3px;margin-right:6px;vertical-align:middle}
+.lg{margin:2px 0;white-space:nowrap}
+#log{right:12px;bottom:84px;padding:10px 12px;width:330px;max-height:42%;overflow:auto;display:none}
+.ev{padding:4px 6px;border-radius:6px;margin:2px 0;color:var(--mut);border-left:3px solid transparent}
+.ev.done{color:var(--txt);background:rgba(255,255,255,.04)}
+.ev.main{border-left-color:var(--red)}
+.ev.backup{border-left-color:var(--amb)}
+.ev .t{font-variant-numeric:tabular-nums;font-weight:600;margin-right:6px}
+#time{left:50%;transform:translateX(-50%);bottom:12px;padding:8px 12px;width:min(760px,calc(100% - 24px));display:none}
+#time .row{display:flex;align-items:center;gap:8px}
+#slider{flex:1;accent-color:#ef4444}
+#clock{min-width:110px;text-align:right;font-variant-numeric:tabular-nums;font-weight:650}
+#phase{color:var(--mut);font-size:12px;margin-top:4px}
+#tip{position:absolute;pointer-events:none;padding:8px 10px;font-size:12px;display:none;max-width:280px;z-index:5}
+#tip b{color:#fff}
+.lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:none;font-size:11px;padding:1px 6px;border-radius:5px;
+     background:rgba(11,18,32,.72);border:1px solid rgba(148,163,184,.25);color:#e2e8f0}
+.lbl.sub{font-size:13px;font-weight:650;background:rgba(11,18,32,.85)}
+.lbl.flt{background:rgba(239,68,68,.92);border-color:#fecaca;color:#fff;font-weight:650}
+.lbl.val{background:rgba(245,158,11,.9);border-color:#fde68a;color:#111;font-weight:600}
+.lbl.v{background:rgba(56,189,248,.18)}
+#empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--mut);font-size:15px}
+@media (max-width:640px){#legend{display:none}#log{width:calc(100% - 24px);bottom:96px}}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="labels"></div>
+<div id="empty">The network is empty: build it on the single-line diagram page first.</div>
+<div id="head" class="panel"><h1 id="ttl"></h1><div class="sub" id="subt"></div><div id="kpi"></div></div>
+<div id="tools" class="panel">
+  <button id="bNet" class="on" title="Voltage levels">Network</button>
+  <button id="bLf" title="Loading and power flow">Load flow</button>
+  <button id="bFault" title="Fault playback">Fault</button>
+  <button id="bLbl" class="on" title="Show or hide the labels">Labels</button>
+  <button id="bFlow" class="on" title="Animated power flow">Flow</button>
+  <button id="bTop" title="View from above">Top view</button>
+  <button id="bReset" title="Reset the view">Reset</button>
+</div>
+<div id="legend" class="panel"></div>
+<div id="log" class="panel"><h3>Sequence of tripping</h3><div id="evs"></div></div>
+<div id="time" class="panel">
+  <div class="row"><button id="bPlay">▶ Play</button><button id="bSpeed" title="Playback speed">×0.1</button>
+  <input id="slider" type="range" min="0" max="1000" value="0"><div id="clock">0 ms</div></div>
+  <div id="phase"></div>
+</div>
+<div id="tip" class="panel"></div>
+<script>/*__THREE__*/</script>
+<script>
+"use strict";
+const SC = __SCENE_JSON__;
+const KVCOL = SC.kvcol || {400:'#d63a3a',380:'#e07b00',275:'#2a78d6',220:'#1a9e5c',132:'#7c3aed'};
+const STCOL = {EXCELLENT:'#22c55e',NORMAL:'#22c55e',WATCH:'#f59e0b',ACTION:'#ef4444',OUT:'#64748b'};
+const kvc = kv => KVCOL[Math.round(kv)] || '#94a3b8';
+const $ = id => document.getElementById(id);
+$('ttl').textContent = (SC.title || 'Network') + ' · 3D view';
+$('subt').textContent = SC.subtitle || '';
+
+// ------------------------------------------------------------------ renderer, scene, camera
+const view = $('view');
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1220);
+scene.fog = new THREE.Fog(0x0b1220, 1600, 4200);
+const camera = new THREE.PerspectiveCamera(42, 1, 1, 9000);
+scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x0b1220, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 1.05);
+sun.position.set(-500, 900, 400); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, {left:-900, right:900, top:900, bottom:-900, near:10, far:2600});
+scene.add(sun);
+
+// ground
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshStandardMaterial({color:0x0f1a2c, roughness:1}));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(4000, 80, 0x1e2d47, 0x15233a); grid.position.y = 0.2; scene.add(grid);
+
+// ------------------------------------------------------------------ simple orbit controls (drag: rotate, right-drag / two fingers: pan, wheel / pinch: zoom)
+const ctl = {target:new THREE.Vector3(), r:1400, th:-0.55, ph:0.95, drag:null, last:null, pinch:null};
+function applyCam(){
+  ctl.ph = Math.max(0.08, Math.min(1.45, ctl.ph)); ctl.r = Math.max(60, Math.min(5200, ctl.r));
+  camera.position.set(ctl.target.x + ctl.r * Math.sin(ctl.ph) * Math.sin(ctl.th), ctl.target.y + ctl.r * Math.cos(ctl.ph),
+                      ctl.target.z + ctl.r * Math.sin(ctl.ph) * Math.cos(ctl.th));
+  camera.lookAt(ctl.target);
+}
+function pan(dx, dy){
+  const k = ctl.r / 900, f = new THREE.Vector3(), rgt = new THREE.Vector3();
+  camera.getWorldDirection(f); f.y = 0; f.normalize(); rgt.crossVectors(f, new THREE.Vector3(0,1,0)).normalize();
+  ctl.target.addScaledVector(rgt, -dx * k).addScaledVector(f, dy * k);
+}
+const cv = renderer.domElement;
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => { ctl.drag = (e.button === 2 || e.shiftKey) ? 'pan' : 'rot'; ctl.last = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerup', e => { ctl.drag = null; });
+cv.addEventListener('pointermove', e => {
+  if (ctl.drag && !ctl.pinch){
+    const dx = e.clientX - ctl.last[0], dy = e.clientY - ctl.last[1]; ctl.last = [e.clientX, e.clientY];
+    if (ctl.drag === 'rot'){ ctl.th -= dx * 0.006; ctl.ph -= dy * 0.006; } else pan(dx, dy);
+    applyCam();
+  }
+  hover(e);
+});
+cv.addEventListener('wheel', e => { e.preventDefault(); ctl.r *= Math.exp(e.deltaY * 0.0012); applyCam(); }, {passive:false});
+cv.addEventListener('touchstart', e => { if (e.touches.length === 2){ const [a,b] = e.touches; ctl.pinch = {d:Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY), x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2}; } }, {passive:true});
+cv.addEventListener('touchmove', e => { if (e.touches.length === 2 && ctl.pinch){ const [a,b] = e.touches; const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+  const x = (a.clientX+b.clientX)/2, y = (a.clientY+b.clientY)/2; ctl.r *= ctl.pinch.d / Math.max(d, 1); pan(x - ctl.pinch.x, y - ctl.pinch.y); ctl.pinch = {d, x, y}; applyCam(); } }, {passive:true});
+cv.addEventListener('touchend', e => { if (e.touches.length < 2) ctl.pinch = null; }, {passive:true});
+
+// ------------------------------------------------------------------ labels (HTML, projected every frame)
+const labelsDiv = $('labels'), LABELS = [];
+function label(text, pos, cls, group){
+  const el = document.createElement('div'); el.className = 'lbl ' + (cls || ''); el.textContent = text; labelsDiv.appendChild(el);
+  const L = {el, pos:pos.clone(), group:group || 'base', show:true}; LABELS.push(L); return L;
+}
+const _v = new THREE.Vector3();
+function drawLabels(){
+  const w = cv.clientWidth, h = cv.clientHeight;
+  for (const L of LABELS){
+    const on = L.show && showGroup(L.group);
+    if (!on){ L.el.style.display = 'none'; continue; }
+    _v.copy(L.pos).project(camera);
+    if (_v.z > 1 || _v.x < -1.2 || _v.x > 1.2 || _v.y < -1.2 || _v.y > 1.2){ L.el.style.display = 'none'; continue; }
+    L.el.style.display = 'block'; L.el.style.left = ((_v.x + 1) / 2 * w) + 'px'; L.el.style.top = ((1 - _v.y) / 2 * h) + 'px';
+  }
+}
+
+// ------------------------------------------------------------------ helpers
+const PICK = [];
+const mat = (c, o) => new THREE.MeshStandardMaterial(Object.assign({color:c, roughness:.55, metalness:.25}, o || {}));
+function addMesh(geo, m, x, y, z, info){ const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; o.receiveShadow = true;
+  scene.add(o); if (info){ o.userData.info = info; PICK.push(o); } return o; }
+function heat(f){ // 0..1 -> green..amber..red
+  f = Math.max(0, Math.min(1, f)); const c = new THREE.Color();
+  return f < .5 ? c.setRGB(.13 + 1.7 * f * .55, .77, .37 - .5 * f) : c.setRGB(.94, .62 - (f - .5) * 1.0, .04);
+}
+const fmt = (v, d) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : Number(v).toFixed(d === undefined ? 1 : d);
+
+// ------------------------------------------------------------------ build the network
+const BUS = {}, BUSH = SC.bus_half || 38, H_BUS = 14, H_TOWER = 46;
+const empty = !SC.buses || !SC.buses.length;
+if (empty) $('empty').style.display = 'flex';
+const subOf = {};
+(SC.buses || []).forEach(b => { subOf[b.id] = b.sub; });
+
+// substations: platform under all their buses
+const bySub = {};
+(SC.buses || []).forEach(b => { (bySub[b.sub] = bySub[b.sub] || []).push(b); });
+const SUBS = {};
+(SC.subs || []).forEach(s => {
+  const bs = bySub[s.id] || [];
+  const xs = bs.map(b => b.x), zs = bs.map(b => b.z);
+  const x0 = Math.min(...xs, s.x) - BUSH - 26, x1 = Math.max(...xs, s.x) + BUSH + 26, z0 = Math.min(...zs, s.z) - 30, z1 = Math.max(...zs, s.z) + 30;
+  const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const slab = addMesh(new THREE.BoxGeometry(w, 4, d), mat(0x1e293b, {roughness:.9, metalness:.05}), cx, 2, cz,
+                       {t:'Substation', n:s.id, rows:[['Buses', bs.map(b => b.id).join(', ')]]});
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(slab.geometry), new THREE.LineBasicMaterial({color:0x38bdf8, transparent:true, opacity:.35}));
+  edge.position.copy(slab.position); scene.add(edge);
+  // fence posts at the corners
+  [[x0,z0],[x1,z0],[x0,z1],[x1,z1]].forEach(([x,z]) => addMesh(new THREE.CylinderGeometry(1.2,1.2,10,6), mat(0x475569), x, 9, z));
+  SUBS[s.id] = {cx, cz, w, d, slab};
+  label(s.id, new THREE.Vector3(cx, 34, z0 - 2), 'sub', 'sub');
+});
+
+// buses
+(SC.buses || []).forEach(b => {
+  const col = new THREE.Color(kvc(b.kv));
+  const m = mat(col, {emissive:col, emissiveIntensity:.25});
+  const o = addMesh(new THREE.BoxGeometry(BUSH * 2, 3, 5), m, b.x, H_BUS, b.z,
+    {t:'Busbar', n:b.id, rows:[['Substation', b.sub], ['Voltage', fmt(b.kv, 0) + ' kV'], ['Load flow', b.v !== undefined ? fmt(b.v, 3) + ' pu (' + b.st + ')' : 'not run']]});
+  // insulators / supports
+  for (const dx of [-BUSH * .8, 0, BUSH * .8]) addMesh(new THREE.CylinderGeometry(1.4, 1.8, H_BUS - 4, 8), mat(0x94a3b8), b.x + dx, (H_BUS - 4) / 2 + 4, b.z);
+  const halo = new THREE.Mesh(new THREE.BoxGeometry(BUSH * 2 + 8, 9, 13), new THREE.MeshBasicMaterial({color:0xef4444, transparent:true, opacity:0, depthWrite:false}));
+  halo.position.set(b.x, H_BUS, b.z); scene.add(halo);
+  BUS[b.id] = {d:b, mesh:o, mat:m, col, halo, pos:new THREE.Vector3(b.x, H_BUS, b.z),
+               lbl:label(b.id + ' · ' + fmt(b.kv, 0) + ' kV', new THREE.Vector3(b.x, H_BUS + 10, b.z + 4), 'v', 'bus')};
+});
+
+// lines: towers and sagging conductors (overhead) or a buried cable route
+const LINES = {};
+function linePath(a, b, off, cable){
+  const A = BUS[a].pos, B = BUS[b].pos;
+  const dir = new THREE.Vector3().subVectors(B, A); dir.y = 0; const len = dir.length() || 1; dir.normalize();
+  const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+  const sx = Math.max(-BUSH * .8, Math.min(BUSH * .8, (B.x - A.x) * .25));
+  const P0 = new THREE.Vector3(A.x + sx, 0, A.z).addScaledVector(perp, off), P1 = new THREE.Vector3(B.x - sx, 0, B.z).addScaledVector(perp, off);
+  const L = P0.distanceTo(P1), spans = cable ? 1 : Math.max(2, Math.round(L / 90)), pts = [], towers = [];
+  pts.push(new THREE.Vector3(A.x + sx, H_BUS + 1.5, A.z).addScaledVector(perp, off * .35));
+  for (let i = 0; i <= spans; i++){
+    const f = i / spans, p = P0.clone().lerp(P1, f);
+    const h = cable ? 1.5 : (i === 0 || i === spans ? H_BUS + 10 : H_TOWER);
+    if (!cable && i > 0 && i < spans) towers.push(p.clone());
+    if (i > 0 && !cable){ // sag between the previous support and this one
+      const q = P0.clone().lerp(P1, (i - .5) / spans), hp = pts[pts.length - 1].y; q.y = Math.min(hp, h) - Math.min(14, L / spans * .07); pts.push(q);
+    }
+    p.y = h; pts.push(p);
+  }
+  pts.push(new THREE.Vector3(B.x - sx, H_BUS + 1.5, B.z).addScaledVector(perp, off * .35));
+  return {curve:new THREE.CatmullRomCurve3(pts, false, 'centripetal'), towers, dir};
+}
+const towerGeo = (() => { const g = new THREE.CylinderGeometry(1.2, 3.6, H_TOWER, 4); g.translate(0, H_TOWER / 2, 0); return g; })();
+const armGeo = new THREE.BoxGeometry(22, 1.6, 1.6);
+const towerMat = mat(0x64748b, {metalness:.6});
+(SC.lines || []).forEach(l => {
+  if (!BUS[l.a] || !BUS[l.b]) return;
+  const P = linePath(l.a, l.b, l.off || 0, l.cable);
+  const base = new THREE.Color(kvc(BUS[l.a].d.kv));
+  const m = mat(base, {emissive:base, emissiveIntensity:.35, roughness:.4});
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(P.curve, Math.max(40, P.towers.length * 16), l.cable ? 2.2 : 1.3, 6, false), m);
+  tube.castShadow = true; scene.add(tube);
+  tube.userData.info = {t:l.cable ? 'Cable' : 'Overhead line', n:l.id, rows:[['From', l.a], ['To', l.b], ['Length', fmt(l.km, 1) + ' km'],
+    ['Loading', l.load !== undefined ? fmt(l.load, 1) + ' % (' + l.st + ')' : 'not run'], ['P (from end)', l.p !== undefined ? fmt(l.p, 1) + ' MW' : '–']]
+    .concat(l.alias ? [['Other names', l.alias]] : [])};
+  PICK.push(tube);
+  if (l.cable){ // cable trench markers
+    const n = 8; for (let i = 1; i < n; i++){ const p = P.curve.getPointAt(i / n); addMesh(new THREE.BoxGeometry(5, 1.5, 5), mat(0xf59e0b), p.x, 1, p.z); }
+  }
+  P.towers.forEach(t => {
+    const tw = new THREE.Mesh(towerGeo, towerMat); tw.position.set(t.x, 0, t.z); tw.castShadow = true; scene.add(tw);
+    const arm = new THREE.Mesh(armGeo, towerMat); arm.position.set(t.x, H_TOWER - 2, t.z); arm.rotation.y = Math.atan2(-P.dir.z, P.dir.x) + Math.PI / 2; scene.add(arm);
+  });
+  const mid = P.curve.getPointAt(.5);
+  const lb = label(l.id + (l.km ? ' · ' + fmt(l.km, 0) + ' km' : ''), mid.clone().add(new THREE.Vector3(0, 8, 0)), '', 'line');
+  // flow particles
+  const N = Math.max(3, Math.min(12, Math.round(P.curve.getLength() / 120)));
+  const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(2.6, 10, 8), new THREE.MeshBasicMaterial({color:0xffffff}), N);
+  dots.frustumCulled = false; scene.add(dots);
+  LINES[l.id] = {d:l, curve:P.curve, tube, mat:m, base, dots, N, lbl:lb, len:P.curve.getLength(), phase:Math.random()};
+});
+
+// transformers: two coils between their buses
+const TRAFOS = {};
+(SC.trafos || []).forEach(t => {
+  if (!BUS[t.a] || !BUS[t.b]) return;
+  const A = BUS[t.a].pos, B = BUS[t.b].pos;
+  const c = new THREE.Vector3((A.x + B.x) / 2 + (t.off || 0), 0, (A.z + B.z) / 2);
+  const tank = addMesh(new THREE.BoxGeometry(16, 14, 11), mat(0x334155, {metalness:.5}), c.x, 7, c.z,
+    {t:'Transformer', n:t.id, rows:[['HV bus', t.a], ['LV bus', t.b], ['Loading', t.load !== undefined ? fmt(t.load, 1) + ' % (' + t.st + ')' : 'not run'],
+                                     ['P (HV)', t.p !== undefined ? fmt(t.p, 1) + ' MW' : '–']]});
+  const c1 = new THREE.Color(kvc(BUS[t.a].d.kv)), c2 = new THREE.Color(kvc(BUS[t.b].d.kv));
+  addMesh(new THREE.CylinderGeometry(4, 4, 9, 18), mat(c1, {emissive:c1, emissiveIntensity:.3}), c.x - 4, 18, c.z);
+  addMesh(new THREE.CylinderGeometry(4, 4, 9, 18), mat(c2, {emissive:c2, emissiveIntensity:.3}), c.x + 4, 18, c.z);
+  for (const [P, col] of [[A, c1], [B, c2]]){
+    const cur = new THREE.CatmullRomCurve3([new THREE.Vector3(c.x, 22, c.z), new THREE.Vector3((c.x + P.x) / 2, 26, (c.z + P.z) / 2), P.clone()]);
+    const tb = new THREE.Mesh(new THREE.TubeGeometry(cur, 20, .9, 5), mat(col, {emissive:col, emissiveIntensity:.3})); scene.add(tb);
+  }
+  TRAFOS[t.id] = {d:t, tank};
+  label(t.id, new THREE.Vector3(c.x, 30, c.z), '', 'line');
+});
+
+// reactors, capacitors and sources around their bus
+const sideCount = {};
+function slot(bus, up){ const k = bus + (up ? 'u' : 'd'); sideCount[k] = (sideCount[k] || 0) + 1; const i = sideCount[k] - 1;
+  const b = BUS[bus].pos; return new THREE.Vector3(b.x - BUSH * .6 + (i % 4) * BUSH * .4, 0, b.z + (up ? -1 : 1) * (20 + Math.floor(i / 4) * 16)); }
+(SC.shunts || []).forEach(s => {
+  if (!BUS[s.bus]) return; const p = slot(s.bus, false);
+  const isR = /react/i.test(s.kind);
+  addMesh(isR ? new THREE.CylinderGeometry(4.5, 4.5, 12, 16) : new THREE.BoxGeometry(8, 10, 6), mat(isR ? 0x0ea5e9 : 0xa855f7, {metalness:.4}), p.x, 9, p.z,
+          {t:s.kind, n:s.id, rows:[['Bus', s.bus]]});
+  const cur = new THREE.CatmullRomCurve3([new THREE.Vector3(p.x, 15, p.z), new THREE.Vector3(p.x, H_BUS, (p.z + BUS[s.bus].pos.z) / 2), new THREE.Vector3(p.x, H_BUS, BUS[s.bus].pos.z)]);
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(cur, 10, .6, 4), mat(0x94a3b8)));
+});
+const SRC = {};
+(SC.sources || []).forEach(s => {
+  if (!BUS[s.bus]) return; const p = slot(s.bus, true); const gen = /gen/i.test(s.kind);
+  const col = gen ? 0x22c55e : 0x38bdf8;
+  const o = addMesh(gen ? new THREE.CylinderGeometry(6, 6, 10, 20) : new THREE.OctahedronGeometry(7), mat(col, {emissive:col, emissiveIntensity:.6}), p.x, 30, p.z,
+                    {t:gen ? 'Generator' : 'Grid infeed', n:s.id, rows:[['Bus', s.bus], ['P', s.p !== undefined && s.p !== null ? fmt(s.p, 1) + ' MW' : '–']]});
+  const cur = new THREE.CatmullRomCurve3([new THREE.Vector3(p.x, 24, p.z), new THREE.Vector3(p.x, H_BUS + 6, (p.z + BUS[s.bus].pos.z) / 2), BUS[s.bus].pos.clone()]);
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(cur, 12, .7, 4), mat(col, {emissive:col, emissiveIntensity:.4})));
+  SRC[s.id] = {o, d:s, lbl:label(s.id, new THREE.Vector3(p.x, 42, p.z), '', 'bus')};
+});
+
+// breakers: at each line end, on the line side of the bus
+const BRK = {};
+(SC.breakers || []).forEach(b => {
+  const L = LINES[b.el]; if (!L || !BUS[b.bus]) return;
+  const atA = L.d.a === b.bus, p = L.curve.getPointAt(atA ? .035 : .965);
+  const m = mat(0x16a34a, {emissive:0x16a34a, emissiveIntensity:.5});
+  const o = addMesh(new THREE.BoxGeometry(6, 6, 6), m, p.x, p.y + 1, p.z, {t:'Circuit breaker', n:b.id, rows:[['Bus', b.bus], ['Element', b.el]]});
+  BRK[b.bus + '|' + b.el] = {o, m, y:p.y + 1, state:'closed'};
+});
+function setBreaker(key, open){
+  const B = BRK[key]; if (!B || B.state === (open ? 'open' : 'closed')) return;
+  B.state = open ? 'open' : 'closed';
+  B.m.color.set(open ? 0xef4444 : 0x16a34a); B.m.emissive.set(open ? 0xef4444 : 0x16a34a);
+  B.o.rotation.z = open ? .7 : 0; B.o.position.y = B.y + (open ? 4 : 0);
+}
+
+// ------------------------------------------------------------------ fault
+const F = SC.fault || null;
+let FP = null;
+if (F && LINES[F.line]){
+  const L = LINES[F.line], f = L.d.a === F.from ? F.pos : 1 - F.pos;
+  const p = L.curve.getPointAt(Math.max(0, Math.min(1, f)));
+  const g = new THREE.Group(); g.position.copy(p); scene.add(g);
+  const bolt = new THREE.Mesh(new THREE.ConeGeometry(4, 26, 5), new THREE.MeshBasicMaterial({color:0xfde047}));
+  bolt.rotation.x = Math.PI; bolt.position.y = 16; g.add(bolt);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(10, 20, 16), new THREE.MeshBasicMaterial({color:0xef4444, transparent:true, opacity:.55, depthWrite:false}));
+  g.add(glow);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(12, 15, 40), new THREE.MeshBasicMaterial({color:0xef4444, transparent:true, opacity:.7, side:THREE.DoubleSide, depthWrite:false}));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = -p.y + 1; g.add(ring);
+  const light = new THREE.PointLight(0xff4d4d, 0, 420, 1.6); g.add(light);
+  const fl = label('⚡ ' + F.type + ' fault · ' + fmt(F.d_km, 1) + ' km', p.clone().add(new THREE.Vector3(0, 34, 0)), 'flt', 'fault');
+  FP = {g, bolt, glow, ring, light, f, p, lbl:fl};
+  g.visible = false;
+  // current labels on the faulted line (one per side) and on the other branches
+  const fb = F.branches || {};
+  const sides = (fb[F.line] && fb[F.line].sides) || {};
+  Object.entries(sides).forEach(([bus, r]) => {
+    const t = L.d.a === bus ? f * .5 : f + (1 - f) * .5, q = L.curve.getPointAt(t);
+    r._lbl = label(fmt(r.i, 2) + ' kA from ' + bus, q.clone().add(new THREE.Vector3(0, 18, 0)), 'val', 'fault');
+  });
+  Object.entries(fb).forEach(([id, r]) => {
+    if (id === F.line || !LINES[id] || r.i === null) return;
+    r._lbl = label(fmt(r.i, 2) + ' kA', LINES[id].curve.getPointAt(.5).clone().add(new THREE.Vector3(0, 16, 0)), 'val', 'fault');
+  });
+  Object.entries(F.buses || {}).forEach(([bus, v]) => {
+    if (!BUS[bus]) return;
+    v._lbl = label('V ' + fmt(v.low, 2) + ' pu', BUS[bus].pos.clone().add(new THREE.Vector3(0, 22, -4)), 'val', 'fault');
+  });
+}
+
+// ------------------------------------------------------------------ modes and timeline
+let MODE = 'net', SHOWLBL = true, SHOWFLOW = true, T = -0.05, PLAY = false, SPEED = 0.1;
+const hasLF = (SC.lines || []).some(l => l.load !== undefined);
+if (!hasLF) $('bLf').style.display = 'none';
+if (!F) $('bFault').style.display = 'none';
+const T0 = -0.05, T1 = F ? Math.max((F.cleared || 0.1) + 0.35, 0.4) : 1;
+function showGroup(g){
+  if (!SHOWLBL && g !== 'fault') return g === 'sub';
+  if (g === 'fault') return MODE === 'fault' && T >= 0 && (F && T < (F.cleared || 1e9) + 0.08);
+  if (g === 'line' && MODE === 'fault') return false;
+  return true;
+}
+function setMode(m){
+  MODE = m; ['bNet', 'bLf', 'bFault'].forEach(id => $(id).classList.toggle('on', ({net:'bNet', lf:'bLf', fault:'bFault'})[m] === id));
+  $('time').style.display = m === 'fault' ? 'block' : 'none';
+  $('log').style.display = m === 'fault' ? 'block' : 'none';
+  if (m === 'fault'){ T = T0; PLAY = true; $('bPlay').textContent = '⏸ Pause'; focusFault(); }
+  legend(); kpis(); paint();
+}
+function kpis(){
+  const K = [];
+  if (MODE === 'fault' && F){
+    K.push(['Fault', F.type + ' on ' + F.line], ['Location', fmt(F.d_km, 1) + ' km from ' + F.from + ' (' + Math.round(F.pos * 100) + '%)'],
+           ['Fault current', fmt(F.ik, 2) + ' kA'], ['Cleared in', F.cleared ? Math.round(F.cleared * 1000) + ' ms' : 'not cleared']);
+    Object.entries(F.ends || {}).slice(0, 2).forEach(([b, v]) => K.push(['From ' + b, fmt(v, 2) + ' kA']));
+  } else {
+    K.push(['Substations', (SC.subs || []).length], ['Busbars', (SC.buses || []).length], ['Circuits', (SC.lines || []).length], ['Transformers', (SC.trafos || []).length]);
+    if (MODE === 'lf'){ const mx = Math.max(0, ...(SC.lines || []).map(l => l.load || 0)); K.push(['Highest line loading', fmt(mx, 1) + ' %']); }
+  }
+  $('kpi').innerHTML = K.map(([a, b]) => `<div class="k"><span>${a}</span><b>${b}</b></div>`).join('');
+}
+function legend(){
+  let h = '';
+  if (MODE === 'net'){
+    h = '<h3>Voltage level</h3>' + [...new Set((SC.buses || []).map(b => Math.round(b.kv)))].sort((a, b) => b - a)
+      .map(k => `<div class="lg"><span class="sw" style="background:${kvc(k)}"></span>${k} kV</div>`).join('');
+    h += '<div class="lg" style="margin-top:6px;color:#94a3b8">Drag to rotate · right-drag to move · wheel to zoom · point at any item for its data</div>';
+  } else if (MODE === 'lf'){
+    h = '<h3>Line loading</h3>' + [['#22c55e', 'Normal'], ['#f59e0b', 'High (watch)'], ['#ef4444', 'Over the limit'], ['#64748b', 'Out of service']]
+      .map(([c, t]) => `<div class="lg"><span class="sw" style="background:${c}"></span>${t}</div>`).join('') +
+      '<div class="lg" style="margin-top:6px;color:#94a3b8">Moving dots: active power direction, speed with the loading</div>';
+  } else {
+    h = '<h3>Fault playback</h3>' + [['#fde047', 'Fault point'], ['linear-gradient(90deg,#22c55e,#f59e0b,#ef4444)', 'Fault current (low → high)'],
+      ['#ef4444', 'Bus voltage dip / breaker open'], ['#64748b', 'Line disconnected']]
+      .map(([c, t]) => `<div class="lg"><span class="sw" style="background:${c}"></span>${t}</div>`).join('') +
+      '<div class="lg" style="margin-top:6px;color:#94a3b8">Calculated with IEC 60909 on the whole network. Back-up relays shown, they trip only if the main protection fails.</div>';
+  }
+  $('legend').innerHTML = h;
+}
+
+// event log
+const EVS = F ? (F.seq || []).slice().sort((a, b) => a.t - b.t) : [];
+if (F){
+  $('evs').innerHTML = `<div class="ev main done"><span class="t">0 ms</span>Fault: ${F.name || F.type} on ${F.line}, ${fmt(F.d_km, 1)} km from ${F.from}</div>` +
+    EVS.map((e, i) => `<div class="ev ${e.role === 'Main' ? 'main' : 'backup'}" id="ev${i}"><span class="t">${Math.round(e.t * 1000)} ms</span>` +
+      `${e.relay} at ${e.bus}: ${e.op}${e.role === 'Main' ? ' · trip' : ' · ' + e.role.toLowerCase()}</div>`).join('') +
+    (F.cleared ? `<div class="ev main" id="evClr"><span class="t">${Math.round(F.cleared * 1000)} ms</span>Fault cleared from all ends</div>` : '');
+}
+
+// colours for the current time
+function paint(){
+  const faultOn = MODE === 'fault' && F && T >= 0;
+  const opened = {};
+  if (F) (F.opens || []).forEach(o => { opened[o.bus] = MODE === 'fault' && T >= o.t; });
+  const cleared = F && MODE === 'fault' && F.cleared !== null && F.cleared !== undefined && T >= F.cleared;
+  const maxI = F ? Math.max(F.ik || 1, 0.1) : 1;
+  for (const L of Object.values(LINES)){
+    let c = L.base, e = .35;
+    if (MODE === 'lf' && L.d.load !== undefined){ c = new THREE.Color(STCOL[L.d.on === false ? 'OUT' : L.d.st] || '#94a3b8'); }
+    if (MODE === 'fault' && F){
+      if (L.d.id === F.line && (cleared)) { c = new THREE.Color(0x475569); e = .05; }
+      else if (faultOn && !cleared){
+        const r = (F.branches || {})[L.d.id];
+        let i = r ? (r.sides ? Math.max(...Object.values(r.sides).map(s => s.i || 0)) : r.i || 0) : 0;
+        c = i > 0.05 ? heat(i / maxI) : new THREE.Color(0x334155); e = .5;
+      } else if (faultOn && cleared){ c = L.base.clone().multiplyScalar(.8); }
+    }
+    L.mat.color.copy(c); L.mat.emissive.copy(c); L.mat.emissiveIntensity = e;
+  }
+  for (const B of Object.values(BUS)){
+    let c = B.col, op = 0;
+    if (MODE === 'lf' && B.d.v !== undefined) c = new THREE.Color(STCOL[B.d.st] || '#94a3b8');
+    if (faultOn && !cleared && F.buses && F.buses[B.d.id]){
+      const lo = F.buses[B.d.id].low; c = lo < .7 ? new THREE.Color(0xef4444) : lo < .9 ? new THREE.Color(0xf59e0b) : B.col;
+      op = lo < .9 ? .18 + .3 * (1 - lo) : 0;
+    }
+    B.mat.color.copy(c); B.mat.emissive.copy(c); B.halo.material.opacity = op;
+  }
+  for (const k of Object.keys(BRK)) setBreaker(k, false);
+  if (F && MODE === 'fault') (F.opens || []).forEach(o => setBreaker(o.bus + '|' + o.el, T >= o.t));
+  if (FP){
+    FP.g.visible = MODE === 'fault' && T >= 0 && !cleared;
+    const fb = (F.branches || {})[F.line];
+    if (fb && fb.sides) Object.entries(fb.sides).forEach(([bus, r]) => { if (r._lbl) r._lbl.show = !opened[bus]; });
+  }
+  EVS.forEach((e, i) => { const el = $('ev' + i); if (el) el.classList.toggle('done', MODE === 'fault' && T >= e.t); });
+  const ec = $('evClr'); if (ec) ec.classList.toggle('done', !!cleared);
+  if (MODE === 'fault' && F){
+    $('clock').textContent = (T < 0 ? '−' : '') + Math.abs(Math.round(T * 1000)) + ' ms';
+    const n = (F.opens || []).filter(o => T >= o.t).length;
+    $('phase').textContent = T < 0 ? 'Before the fault: normal operation.' :
+      cleared ? `Fault cleared in ${Math.round(F.cleared * 1000)} ms: ${F.line} is disconnected, the voltages recover.` :
+      n ? `${n} of ${(F.opens || []).length} line ends open: the remaining end still feeds the fault.` :
+      `Fault on: ${fmt(F.ik, 2)} kA, voltages dip; the protections are measuring.`;
+    $('slider').value = Math.round((T - T0) / (T1 - T0) * 1000);
+  }
+}
+
+// flow particles
+const _m = new THREE.Matrix4(), _p = new THREE.Vector3();
+function flow(dt){
+  const cleared = F && MODE === 'fault' && F.cleared !== null && T >= F.cleared;
+  for (const L of Object.values(LINES)){
+    let speed = 0, dir = 1, vis = SHOWFLOW, col = 0xffffff;
+    if (MODE === 'fault' && F && T >= 0 && !cleared){
+      const r = (F.branches || {})[L.d.id];
+      if (L.d.id === F.line){ vis = vis && true; speed = .9; col = 0xfde047; }
+      else if (r && r.i > .05){ speed = .25 + .9 * r.i / Math.max(F.ik, .1); dir = r.from === L.d.a ? 1 : -1; col = 0xfde68a; }
+      else vis = false;
+    } else if (MODE === 'fault' && cleared && L.d.id === F.line) vis = false;
+    else { const ld = L.d.load !== undefined ? L.d.load : 30; speed = .04 + .5 * Math.min(ld, 120) / 100; dir = (L.d.p || 1) >= 0 ? 1 : -1; if (L.d.on === false) vis = false; }
+    L.dots.visible = vis; if (!vis) continue;
+    L.dots.material.color.setHex(col);
+    L.phase = (L.phase + dt * speed * 140 / L.len + 1) % 1;
+    for (let i = 0; i < L.N; i++){
+      let u = (L.phase + i / L.N) % 1;
+      if (MODE === 'fault' && F && L.d.id === F.line && T >= 0){ // both ends feed the fault point
+        const half = i % 2 === 0; const f = FP ? FP.f : .5; u = half ? u * f : 1 - u * (1 - f);
+      } else if (dir < 0) u = 1 - u;
+      L.curve.getPointAt(u, _p); _m.makeTranslation(_p.x, _p.y, _p.z); L.dots.setMatrixAt(i, _m);
+    }
+    L.dots.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// ------------------------------------------------------------------ hover tooltip
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = $('tip');
+function hover(e){
+  if (ctl.drag) { tip.style.display = 'none'; return; }
+  const r = cv.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(mouse, camera); ray.params.Line = {threshold:4};
+  const hit = ray.intersectObjects(PICK, false)[0];
+  if (!hit){ tip.style.display = 'none'; cv.style.cursor = 'grab'; return; }
+  const I = hit.object.userData.info; let rows = I.rows.slice();
+  if (MODE === 'fault' && F && T >= 0){
+    const br = (F.branches || {})[I.n], bv = (F.buses || {})[I.n];
+    if (br) rows.push(['Fault current', br.sides ? Object.entries(br.sides).map(([b, s]) => fmt(s.i, 2) + ' kA from ' + b).join(', ') : fmt(br.i, 2) + ' kA (3I0 ' + fmt(br.i0, 2) + ')']);
+    if (bv) rows.push(['Voltage in the fault', 'A ' + fmt(bv.a, 2) + ' · B ' + fmt(bv.b, 2) + ' · C ' + fmt(bv.c, 2) + ' pu']);
+  }
+  tip.innerHTML = `<b>${I.t}: ${I.n}</b>` + rows.map(([a, b]) => `<div><span style="color:#94a3b8">${a}:</span> ${b}</div>`).join('');
+  tip.style.display = 'block'; cv.style.cursor = 'pointer';
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 290) + 'px'; tip.style.top = Math.min(e.clientY + 14, window.innerHeight - 140) + 'px';
+}
+
+// ------------------------------------------------------------------ view helpers and buttons
+const box = new THREE.Box3();
+(SC.buses || []).forEach(b => box.expandByPoint(new THREE.Vector3(b.x, 0, b.z)));
+function resetView(){
+  if (box.isEmpty()) { ctl.target.set(0, 0, 0); ctl.r = 1200; }
+  else { box.getCenter(ctl.target); const s = box.getSize(new THREE.Vector3()); ctl.r = Math.max(420, Math.max(s.x, s.z) * 1.25); }
+  ctl.th = -0.55; ctl.ph = 0.95; applyCam();
+}
+function focusFault(){ if (!FP) return; ctl.target.copy(FP.p).setY(0); ctl.r = Math.max(480, Math.min(ctl.r, 900)); ctl.ph = .9; applyCam(); }
+$('bNet').onclick = () => setMode('net');
+$('bLf').onclick = () => setMode('lf');
+$('bFault').onclick = () => setMode('fault');
+$('bLbl').onclick = () => { SHOWLBL = !SHOWLBL; $('bLbl').classList.toggle('on', SHOWLBL); };
+$('bFlow').onclick = () => { SHOWFLOW = !SHOWFLOW; $('bFlow').classList.toggle('on', SHOWFLOW); };
+$('bTop').onclick = () => { ctl.ph = 0.08; applyCam(); };
+$('bReset').onclick = resetView;
+$('bPlay').onclick = () => { if (T >= T1) T = T0; PLAY = !PLAY; $('bPlay').textContent = PLAY ? '⏸ Pause' : '▶ Play'; };
+const SPEEDS = [0.02, 0.05, 0.1, 0.25, 1];
+$('bSpeed').onclick = () => { SPEED = SPEEDS[(SPEEDS.indexOf(SPEED) + 1) % SPEEDS.length]; $('bSpeed').textContent = '×' + SPEED; };
+$('slider').oninput = e => { PLAY = false; $('bPlay').textContent = '▶ Play'; T = T0 + (T1 - T0) * e.target.value / 1000; paint(); };
+
+function resize(){ const w = view.clientWidth || window.innerWidth, h = view.clientHeight || window.innerHeight; renderer.setSize(w, h, false);
+  cv.style.width = w + 'px'; cv.style.height = h + 'px'; camera.aspect = w / h; camera.updateProjectionMatrix(); }
+window.addEventListener('resize', resize);
+
+// ------------------------------------------------------------------ loop
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (MODE === 'fault' && PLAY){
+    T += dt * SPEED;
+    if (T >= T1){ T = T1; PLAY = false; $('bPlay').textContent = '↺ Replay'; }
+    paint();
+  }
+  if (FP && FP.g.visible){
+    const k = (Math.sin(now / 70) + 1) / 2;
+    FP.glow.scale.setScalar(1 + .5 * k); FP.glow.material.opacity = .35 + .4 * k; FP.light.intensity = 900 * (.4 + .6 * k);
+    FP.ring.scale.setScalar(1 + ((now / 600) % 1) * 2.2); FP.ring.material.opacity = .7 * (1 - (now / 600) % 1);
+    FP.bolt.position.y = 16 + 3 * k;
+  }
+  flow(dt);
+  renderer.render(scene, camera);
+  drawLabels();
+  requestAnimationFrame(loop);
+}
+resize(); resetView(); legend(); kpis(); paint();
+if (SC.start_mode === 'fault' && F) setMode('fault'); else if (SC.start_mode === 'lf' && hasLF) setMode('lf');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

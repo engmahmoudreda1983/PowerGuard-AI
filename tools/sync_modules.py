@@ -25,7 +25,7 @@ MODULES = {
     'relayguard': ('relayguard_ai', 'RelayGuard_AI.app.py', ['relayguard_core.py', 'omicron_report.py', 'report_pdf.py', 'record_anomaly_model.pkl']),
     'faultguard': ('faultguard_ai', 'FaultGuard_AI.app.py', ['faultguard_core.py', 'micom_set.py', 'report_pdf.py', 'trip_html.py', 'faultguard_model.pkl']),
     'networkguard': ('networkguard_ai', 'NetworkGuard_AI.app.py', ['networkguard_core.py', 'networkguard_plots.py', 'networkguard_import.py',
-                                                                   'iec60909_4_example.py', 'report_pdf.py']),   # FaultGuard engine comes from modules/faultguard
+                                                                   'iec60909_4_example.py', 'report_pdf.py', 'networkguard_3d.py', 'networkguard_assets']),   # FaultGuard engine comes from modules/faultguard
 }
 SHARED = [('relayguard_ai', 'comtrade_features.py')]
 
@@ -56,6 +56,9 @@ def main(only=None):
         os.makedirs(dst, exist_ok=True)
         for f in [app] + files:
             s, d = os.path.join(src, f), os.path.join(dst, f)
+            if os.path.isdir(s):                                    # asset folders (e.g. the 3D view) are copied as they are
+                shutil.copytree(s, d, dirs_exist_ok=True)
+                continue
             if f == 'report_pdf.py':
                 d = os.path.join(dst, f'{key}_report_pdf.py')
             if f.endswith('.py'):
