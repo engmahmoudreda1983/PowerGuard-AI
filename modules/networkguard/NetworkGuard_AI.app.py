@@ -521,39 +521,75 @@ with tabs[2]:
                     "ratios and the zone reaches and times. Choose the line and the relay end, check the proposal and apply it.</div>", unsafe_allow_html=True)
         if not len(D['Lines']):
             st.info('Build the single-line diagram first: the settings are applied to its lines.')
-        files = st.file_uploader('Relay settings files', type=['pdf', 'png', 'jpg', 'jpeg', 'xlsx', 'xls', 'csv', 'txt'], accept_multiple_files=True, key='set_files')
-        for k, f in enumerate(files or []):
+        files = st.file_uploader('Relay settings files (MiCOM .set, a .zip of the settings project folder, PDF, picture, Excel, CSV or TXT)',
+                                 type=['set', 'zip', 'pdf', 'png', 'jpg', 'jpeg', 'xlsx', 'xls', 'csv', 'txt'], accept_multiple_files=True, key='set_files')
+        st.caption('Tip: a .zip of the settings project folder keeps the folder names (for example 42_EAST_NORTH), so each file is put on the '
+                   'right circuit even where two circuits run between the same stations.')
+        items, auto = [], []
+        for f in files or []:
+            if f.name.lower().endswith('.zip'):
+                with zipfile.ZipFile(io.BytesIO(f.getvalue())) as z_:
+                    for n_ in z_.namelist():
+                        if n_.lower().endswith('.set'):
+                            items.append((n_, z_.read(n_)))
+            else:
+                items.append((f.name, f.getvalue()))
+        for k, (fname, raw) in enumerate(items):
             with st.container(border=True):
-                raw = f.getvalue()
-                key = f'set_{k}_{f.name}'
+                key = f'set_{k}_{fname}'
                 if key not in ss:
-                    with st.spinner(f'Reading {f.name}...'):
-                        txt, how_ = ni.extract_text(raw, f.name)
-                        ss[key] = (ni.parse_settings(txt), how_)
+                    with st.spinner(f'Reading {fname}...'):
+                        if fname.lower().endswith('.set') or raw[:12] == b'APP: Courier':
+                            import faultguard_core as _fg
+                            ss[key] = (_fg.read_settings_file(raw, fname), 'MiCOM settings file (.set)')
+                        else:
+                            txt, how_ = ni.extract_text(raw, fname)
+                            ss[key] = (ni.parse_settings(txt), how_)
                 sts, how_ = ss[key]
-                st.markdown(f"**{f.name}** · read as {how_} · relay {sts.get('device') or '?'} · {sts.get('description') or ''}")
+                st.markdown(f"**{fname}** · read as {how_} · relay {sts.get('device') or '?'} · {sts.get('plant_reference') or ''} · {sts.get('description') or ''}")
+                if sts.get('_note'):
+                    st.caption(sts['_note'])
                 found = {ni.SET_LABEL.get(a_, a_): v for a_, v in sts.items() if a_ in ni.SET_LABEL and a_ not in ('device', 'description')}
                 if found:
                     st.dataframe(pd.DataFrame([found]), hide_index=True, width=STRETCH)
                 if not len(D['Lines']):
                     continue
                 lines = list(D['Lines']['Line'])
-                g = ni.guess_line(sts, D)
+                g, gb_, _ = ni.guess_line(sts, D, [fname])
+                if g is None:
+                    st.caption('The line of this relay was not recognised from its stations: choose it.')
                 c1, c2 = st.columns(2)
                 ln = c1.selectbox('Line', lines, index=lines.index(g) if g in lines else 0, key=f'{key}_ln')
                 row = D['Lines'][D['Lines']['Line'] == ln].iloc[0]
                 ends = [row['From Bus'], row['To Bus']]
-                gb = ni.guess_bus(sts, ends)
+                gb = gb_ if (g == ln and gb_ in ends) else ni.guess_bus(sts, ends)
                 bus = c2.selectbox('Relay at the busbar', ends, index=ends.index(gb), key=f'{key}_bus')
+                par = D['Lines'][((D['Lines']['From Bus'] == row['From Bus']) & (D['Lines']['To Bus'] == row['To Bus'])) |
+                                 ((D['Lines']['From Bus'] == row['To Bus']) & (D['Lines']['To Bus'] == row['From Bus']))]
+                if len(par) > 1 and not any(ch.isdigit() and '_' in fname for ch in fname):
+                    st.caption(f"{len(par)} circuits run between these stations ({', '.join(par['Line'])}): check that this is the right circuit.")
                 P, nts = ni.settings_proposal(sts, D, ln, bus)
                 for n_ in nts:
                     st.caption(n_)
+                if len(P) and g is not None:
+                    import re as _re
+                    dm = _re.search(r'(\d{1,2})[-.](\d{1,2})[-.](\d{4})', fname.rsplit('/', 1)[-1])
+                    auto.append((ln, bus, str(sts.get('device') or ''), (int(dm.group(3)), int(dm.group(2)), int(dm.group(1))) if dm else (0, 0, 0), sts, P))
                 if len(P):
                     E = st.data_editor(P, key=f'{key}_prop', hide_index=True, width=STRETCH, disabled=['Table', 'Equipment', 'Parameter', 'Current', 'From'])
                     if st.button(f'✅ Apply to {ln}', type='primary', key=f'{key}_apply'):
                         set_data(ni.apply_proposal(D, E)); st.success('Applied.'); st.rerun()
                 else:
                     st.warning('No line or relay data found in this file.')
+        if len(auto) > 1:
+            PA, notes_ = ni.combine_proposals(auto)
+            for n_ in notes_:
+                st.warning(n_)
+            nrel = PA[PA['Table'] == 'Relays']['Equipment'].nunique() if len(PA) else 0
+            nlin = PA[PA['Table'] == 'Lines']['Equipment'].nunique() if len(PA) else 0
+            if st.button(f'✅ Apply all recognised files: {nlin} lines and {nrel} relays (newest file of each line and relay)', type='primary',
+                         key='set_apply_all'):
+                set_data(ni.apply_proposal(D, PA)); st.success(f'{nlin} lines and {nrel} relays applied.'); st.rerun()
     else:
         st.markdown("<div class='pg-note'>Upload a transformer or reactor document (name plate, test report, protection settings): the rating, "
                     "voltages, impedance and vector group are searched in the text. Check the proposal and apply it.</div>", unsafe_allow_html=True)
@@ -802,15 +838,11 @@ def _num(v):
 
 
 def end_of(station, line_row):
-    """'from' or 'to': the line end whose substation name matches a recorder's station name."""
+    """'from' or 'to': the line end whose substation name is most like a recorder's station name (None if neither is)."""
     sub = dict(zip(D['Buses']['Bus'], D['Buses']['Substation']))
-    st_ = ''.join(ch for ch in str(station).upper() if ch.isalpha())
-    for side, b in (('from', line_row['From Bus']), ('to', line_row['To Bus'])):
-        nm = ''.join(ch for ch in str(sub.get(b, b)).upper() if ch.isalpha()).replace('AL', '', 1) if str(sub.get(b, b)).upper().startswith('AL ') else \
-            ''.join(ch for ch in str(sub.get(b, b)).upper() if ch.isalpha())
-        if st_ and nm and (st_[:3] in nm or nm[:3] in st_):
-            return side
-    return None
+    sc_ = {side: ng.station_sim(station, sub.get(b, b)) for side, b in (('from', line_row['From Bus']), ('to', line_row['To Bus']))}
+    best = max(sc_, key=sc_.get)
+    return best if sc_[best] >= 0.6 and sc_[best] > min(sc_.values()) else None
 
 
 def read_record_files(files, fg):
@@ -857,15 +889,20 @@ with tabs[8]:
                 lab = [f"{r.get('Incident', i)} · {r.get('Date', '')} · {r.get('Line', '')} · {r.get('Fault Type', '')}" for i, r in I.iterrows()]
                 k = st.selectbox('Incident', range(len(I)), format_func=lambda i: lab[i], key='fs_inc')
                 r = I.iloc[k]
-                ln, sc_ = ng.match_line(r.get('Line', ''), D)
+                endA = str(r.get('End A', '') or '').strip() or str(r.get('Station', '') or '').split('/')[0].strip()
+                endB = str(r.get('End B', '') or '').strip() or (str(r.get('Station', '') or '').split('/') + [''])[1].strip()
+                ln, busA, _ = ng.line_for_relay(D, endA, endB, [str(r.get('Circuit', '') or ''), str(r.get('Line', '') or '')])
+                if ln is None:                                   # fall back to the words of the incident title
+                    ln, sc_ = ng.match_line(r.get('Line', ''), D); busA = None
+                ln_auto = ln
                 loc = _num(r.get('Location (km)')) if 'Location (km)' in r else _num(r.get('Location'))
                 ln = st.selectbox('Line of the network', LINES, index=LINES.index(ln) if ln in LINES else 0, key=f"fs_inc_line_{k}",
                                   help='Matched from the station names in the FaultGuard incident; change it if needed.')
                 if st.button('⚡ Apply this incident to the network', type='primary', key='fs_use_inc'):
                     Lrow = ng.filled(D)[0]['Lines'].set_index('Line').loc[ln]
                     Lkm = float(Lrow['Length km']) if pd.notna(Lrow['Length km']) else None
-                    endA = str(r.get('End A', '') or '').strip() or str(r.get('Station', '') or '').split('/')[0].strip()
-                    side = end_of(endA, Lrow.to_dict()) if endA else None          # FaultGuard measures the location from End A
+                    side = ('from' if busA == Lrow['From Bus'] else 'to') if (busA and ln == ln_auto) else \
+                        (end_of(endA, Lrow.to_dict()) if endA else None)           # FaultGuard measures the location from End A
                     d_from = (Lkm - loc) if (loc is not None and Lkm and side == 'to') else loc
                     I_ = _num(r.get('Fault Current (kA)'))
                     ft = str(r.get('Fault Type', '') or 'AG').upper()
@@ -895,7 +932,9 @@ with tabs[8]:
                     st.warning('No complete record: upload each .cfg with its .dat.')
                 else:
                     names = ' '.join(f"{rc.get('station', '')} {rc.get('device', '')} {n}" for n, rc in recs)
-                    g, _ = ng.match_line(names, D)
+                    g, _, _ = ng.line_for_relay(D, recs[0][1].get('station', '') or '', '', [f.name for f in recs_up] + [n for n, _ in recs])
+                    if g is None:
+                        g, _ = ng.match_line(names, D)
                     ln = st.selectbox('Line of the fault', LINES, index=LINES.index(g) if g in LINES else 0, key='fs_rec_line')
                     if st.button('🔎 Read the records', type='primary', key='fs_read'):
                         with st.spinner('Reading the records with the FaultGuard engine...'):

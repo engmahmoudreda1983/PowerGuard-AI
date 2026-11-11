@@ -123,6 +123,9 @@ def parse_settings(text):
     m = re.search(r'description\s*[:=]?\s*(.+)', text, re.I)
     if m:
         out['description'] = m.group(1).strip()[:60]
+    m = re.search(r'plant\s*ref\w*\s*[:=]?\s*(.+)', text, re.I)
+    if m:
+        out['plant_reference'] = m.group(1).strip()[:60]
     for k, pat in (('char_ph', r'phase\s*char\w*\.?\s*[:=]?\s*(quad\w*|mho)'), ('char_gnd', r'(?:ground|gnd|earth)\s*char\w*\.?\s*[:=]?\s*(quad\w*|mho)')):
         m = re.search(pat, text, re.I)
         if m:
@@ -227,30 +230,21 @@ def _strs(P):
     return P
 
 
-def guess_line(sts, data):
-    """The line a settings file belongs to, from its description (e.g. '21A NORTH L12'): best matching line name."""
-    ln, sc_ = ng.match_line(sts.get('description') or '', data)
-    if ln and sc_ >= 2:
-        return ln
-    d = ng.clean(data)
-    desc = (sts.get('description') or '').upper()
-    toks = [t for t in re.split(r'[^A-Z0-9]+', desc) if len(t) >= 2]
-    best, score = None, 0
-    for _, r in d['Lines'].iterrows():
-        name = ' '.join([r['Line'], r['From Bus'], r['To Bus']]).upper()
-        s = sum(2 if t in name else (1 if t[:3] in name else 0) for t in toks)
-        if s > score:
-            best, score = r['Line'], s
-    return best
+def guess_line(sts, data, names=()):
+    """The network line a relay settings file belongs to and the relay's own end: (line, bus, score), or (None, None, 0).
+    Uses the relay's own station (plant reference), the far end in its description and the circuit name in the file or
+    folder names (e.g. 41_EAST_NORTH). Parallel circuits are told apart only by the circuit name."""
+    own = sts.get('plant_reference') or sts.get('station') or ''
+    return ng.line_for_relay(data, own, sts.get('description') or '', names)
 
 
 def guess_bus(sts, ends):
-    """The line end of the relay: the end whose name appears in the relay description (e.g. '21A NORTH L12' -> North)."""
-    toks = [t for t in re.split(r'[^A-Z]+', (sts.get('description') or '').upper()) if len(t) >= 3]
-    for e in ends:
-        name = re.sub(r'[^A-Z]', '', e.upper())
-        if any(t[:3] in name for t in toks):
-            return e
+    """The relay's own end of a line: the end most like the relay's own station."""
+    own = sts.get('plant_reference') or sts.get('station') or ''
+    if own:
+        sc_ = [ng.station_sim(own, e) for e in ends]
+        if max(sc_) >= 0.6:
+            return ends[sc_.index(max(sc_))]
     return ends[0]
 
 
@@ -343,6 +337,34 @@ def equipment_proposal(vals, data, kind, eid):
             rows.append({'Table': kind, 'Equipment': eid, 'Parameter': f, 'Current': None if r.empty else r.iloc[0][f], 'Proposed': vals[src],
                          'From': 'equipment document', 'Apply': True})
     return _strs(pd.DataFrame(rows))
+
+
+def combine_proposals(entries):
+    """One proposal from many settings files. entries: [(line, bus, device, date (y, m, d), sts, P)].
+    Line data come from the newest file of each line (either end), relay data from the newest file of each relay.
+    Returns (P, notes); the notes list the lines whose relays carry different line data, with the value used."""
+    newest_line, newest_relay = {}, {}
+    for ln, bus, dev, dt, sts, P in entries:
+        if ln not in newest_line or dt >= newest_line[ln][0]:
+            newest_line[ln] = (dt, P)
+        k = (ln, bus, str(dev)[:3])
+        if k not in newest_relay or dt >= newest_relay[k][0]:
+            newest_relay[k] = (dt, P)
+    parts = [P[P['Table'] == 'Lines'] for _, P in newest_line.values()] + [P[P['Table'] != 'Lines'] for _, P in newest_relay.values()]
+    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    notes = []
+    for ln in sorted(newest_line):
+        vals = {}
+        for ln_, bus, dev, dt, sts, P in entries:
+            if ln_ == ln and sts.get('line_z') is not None:
+                vals[(bus, dev, dt)] = (sts.get('line_z'), sts.get('line_angle'), sts.get('kzn'))
+        zs = [v[0] for v in vals.values() if v[0]]
+        if len(zs) > 1 and (max(zs) - min(zs)) > 0.02 * max(zs) or len({(v[1], v[2]) for v in vals.values()}) > 1:
+            used = max(vals, key=lambda k_: k_[2])
+            notes.append(f"{ln}: the relays carry different line data - " + '; '.join(
+                f"{b} {d} ({k_[2][2]:02d}-{k_[2][1]:02d}-{k_[2][0]}): Z {v[0]:g}, angle {v[1]:g}, kZN {v[2]:g}" if k_[2][0] else f"{b} {d}: Z {v[0]:g}, angle {v[1]:g}, kZN {v[2]:g}"
+                for k_, v in sorted(vals.items(), key=lambda kv: kv[0][2]) for b, d in [(k_[0], k_[1])]) + f". The newest file is used ({used[0]} {used[1]}).")
+    return out, notes
 
 
 def apply_proposal(data, P):

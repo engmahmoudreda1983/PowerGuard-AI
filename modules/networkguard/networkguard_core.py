@@ -1116,6 +1116,73 @@ def _norm(s):
     return re.sub(r'[^A-Z0-9]+', ' ', str(s).upper()).split()
 
 
+_STOP = {'AL', 'KV', 'SS', 'S', 'SUB', 'SUBSTATION', 'STATION', 'LINE', 'L', 'OHL', 'CABLE', 'CIRCUIT', 'GIS', 'AIS', 'BAY'}
+
+
+def _stn(s):
+    """A station name reduced to letters (prefix 'AL', 'kV', 'SS' and similar words removed)."""
+    w = [x for x in re.sub(r'[^A-Z ]', ' ', str(s or '').upper()).split() if x not in _STOP]
+    return ''.join(w)
+
+
+def station_sim(a, b):
+    """How alike two spellings of a station name are (0..1), tolerant of short codes and spelling variants
+    (e.g. a five-letter code against the full name, a missing vowel, 'AL' written or not)."""
+    import difflib
+    A, B = _stn(a), _stn(b)
+    if not A or not B:
+        return 0.0
+    if A in B or B in A:
+        return 1.0 if min(len(A), len(B)) >= 3 else 0.5
+    cons = lambda x: x[:1] + re.sub(r'[AEIOUY]', '', x[1:])
+    r = max(difflib.SequenceMatcher(None, A, B).ratio(), difflib.SequenceMatcher(None, cons(A), cons(B)).ratio())
+    short, long_ = (A, B) if len(A) <= len(B) else (B, A)
+    if len(short) <= 4 and short[0] == long_[0]:                 # an abbreviation: its letters in order inside the long name
+        it = iter(long_)
+        if all(ch in it for ch in short):
+            r = max(r, 0.85)
+    return r
+
+
+def _circuit(texts):
+    for x in texts or []:
+        m = re.search(r'(?<![A-Z0-9])(\d{1,3})_([A-Z]{2,})_([A-Z]{2,})', str(x or '').upper().replace('-', '_'))
+        if m:
+            return m.group(1), m.group(2), m.group(3)
+    return None
+
+
+def line_for_relay(data, own='', remote='', names=()):
+    """The network line a relay protects, from its own station, the far-end text (relay description) and any names that
+    carry the circuit (file or folder names such as <circuit>_<station>_<station>). Returns (line, end bus, score);
+    the end bus is the relay's own end. Names come only from the uploaded files."""
+    d = clean(data)
+    sub = dict(zip(d['Buses']['Bus'], d['Buses']['Substation']))
+    cc = _circuit(list(names) + [remote, own])
+    rem_words = [w for w in re.split(r'[^A-Z]+', re.sub(r'\b\d+[A-Z]*\d*[A-Z]*\b|\bL\d+\b', ' ', str(remote or '').upper())) if len(w) >= 3]
+    best = (None, None, 0.0)
+    for _, r in d['Lines'].iterrows():
+        ends = [(r['From Bus'], sub.get(r['From Bus'], r['From Bus'])), (r['To Bus'], sub.get(r['To Bus'], r['To Bus']))]
+        for i in (0, 1):
+            (bus_o, so), (_, sr) = ends[i], ends[1 - i]
+            own_s = station_sim(own, so) if own else 0.0
+            rem_s = max((station_sim(w, sr) for w in rem_words), default=0.0)
+            pair = max(min(station_sim(cc[1], so), station_sim(cc[2], sr)), min(station_sim(cc[2], so), station_sim(cc[1], sr))) if cc else 0.0
+            pair_ok = pair >= 0.6
+            if cc and not pair_ok:
+                continue                                  # the circuit name points to another line (e.g. one leaving the network)
+            own_ok = own_s >= 0.6 and own_s > station_sim(own, sr)
+            if not (pair_ok or (own_ok and rem_s >= 0.6)):
+                continue                                  # both ends of the line must be recognised
+            s = 2 * own_s + 2 * rem_s
+            if pair_ok:
+                num = re.match(r'\s*(\d{1,3})', str(r['Line']))
+                s += 1.5 * 2 * pair + (3 if (num and num.group(1) == cc[0]) else 0)
+            if s > best[2] + 1e-9:
+                best = (r['Line'], bus_o, s)
+    return best
+
+
 def match_line(name, data):
     """The network line that a name from another source (relay description, FaultGuard title) refers to.
     Uses the line ID, its other names, and its end substations. Returns (line, score)."""
