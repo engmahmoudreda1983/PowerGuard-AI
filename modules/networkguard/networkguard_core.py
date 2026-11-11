@@ -731,44 +731,83 @@ def _scaled(data, grids, k1, k0=1.0):
     return d
 
 
-def fit_grids(data, meas, grids=None):
-    """Adjust the short-circuit power (one factor) and the X0/X1 (one factor) of the chosen grids so that the model's
-    source impedances match the measured ones. meas: list of {'bus', 'line', 'Z1', 'Z0'}.
-    Returns the new data, the comparison table and the factors."""
-    from scipy.optimize import minimize_scalar
+def fit_grids(data, meas, grids=None, each=None):
+    """Adjust the short-circuit power and the X0/X1 of the chosen grids so that the model's source impedances match the
+    measured ones (meas: list of {'bus', 'line', 'Z1', 'Z0'}). One measuring point fixes one value, so all the grids get one
+    common factor; records from several buses or faulted circuits give each grid its own factor (least squares on the
+    logarithms, held towards the common factor where the records cannot tell the grids apart).
+    Returns the new data, the comparison table per record and {'grids', 'mode', 'table' per grid}."""
+    from scipy.optimize import least_squares
     d0, _ = filled(data)
-    grids = list(grids) if grids else list(d0['Grids']['Grid'])
+    grids = list(grids) if grids else [g for g in d0['Grids']['Grid'] if not str(g).startswith(REF_PREFIX)]
+    data = _copy(data)
     G = data['Grids']
-    if G['Sk max MVA'].isna().any():                               # start from the values the model uses
-        data = _copy(data); m = data['Grids']['Sk max MVA'].isna()
-        data['Grids'].loc[m, 'Sk max MVA'] = 10000.0
-        data['Grids'].loc[data['Grids']['Sk min MVA'].isna(), 'Sk min MVA'] = 0.6 * pd.to_numeric(data['Grids']['Sk max MVA'])
+    G.loc[G['Sk max MVA'].isna(), 'Sk max MVA'] = 10000.0                     # start from the values the model uses
+    G.loc[G['Sk min MVA'].isna(), 'Sk min MVA'] = 0.6 * pd.to_numeric(G['Sk max MVA'])
+    G.loc[G['X0/X1'].isna(), 'X0/X1'] = 1.0
     meas = [m for m in meas if m.get('bus')]
+    setups = sorted({(m['bus'], m.get('line') or '') for m in meas})
+    each = (len(setups) > 1 and len(grids) > 1) if each is None else each
+    nets = {}
+    for b, ln in setups:
+        net = build(data, 'sc', outages=(ln,) if ln else ())
+        nets[(b, ln)] = (net, net.bus.index[net.bus.name == b][0], net.ext_grid.copy())
 
-    def err1(lk):
-        d = _scaled(data, grids, math.exp(lk))
-        return sum((math.log(abs(model_source(d, m['bus'], m.get('line'))[0])) - math.log(abs(m['Z1']))) ** 2 for m in meas)
+    def zs(key, k1, k0):
+        net, bi, base = nets[key]
+        for i, r in base.iterrows():
+            a, c = k1.get(r['name'], 1.0), k0.get(r['name'], 1.0)
+            net.ext_grid.at[i, 's_sc_max_mva'] = r['s_sc_max_mva'] * a
+            net.ext_grid.at[i, 's_sc_min_mva'] = r['s_sc_min_mva'] * a
+            net.ext_grid.at[i, 'x0x_max'] = r['x0x_max'] * c
+            net.ext_grid.at[i, 'x0x_min'] = r['x0x_min'] * c
+        sc.calc_sc(net, case='max', fault='1ph', bus=bi)
+        r = net.res_bus_sc.loc[bi]
+        return complex(r['rk_ohm'], r['xk_ohm']), complex(r['rk0_ohm'], r['xk0_ohm'])
 
-    def err0(lk, k1):
-        d = _scaled(data, grids, k1, math.exp(lk))
-        return sum((math.log(abs(model_source(d, m['bus'], m.get('line'))[1])) - math.log(abs(m['Z0']))) ** 2
-                   for m in meas if m.get('Z0') is not None)
+    def factors(x):
+        return dict(zip(grids, np.exp(x))) if each else {g: float(np.exp(x[0])) for g in grids}
 
-    k1 = math.exp(minimize_scalar(err1, bounds=(-4, 4), method='bounded', options={'xatol': 1e-3}).x)
-    has0 = any(m.get('Z0') is not None for m in meas)
-    k0 = math.exp(minimize_scalar(lambda x: err0(x, k1), bounds=(-3, 3), method='bounded', options={'xatol': 1e-3}).x) if has0 else 1.0
-    new = _scaled(data, grids, k1, k0)
+    n = len(grids) if each else 1
+    lam = 0.15
+
+    def res1(x):
+        k = factors(x)
+        r = [math.log(abs(zs((m['bus'], m.get('line') or ''), k, {})[0])) - math.log(abs(m['Z1'])) for m in meas]
+        return np.array(r + ([lam * (v - x.mean()) for v in x] if each else []))
+
+    x1 = least_squares(res1, np.zeros(n), bounds=(-4, 4), diff_step=1e-3).x
+    k1 = factors(x1)
+    m0 = [m for m in meas if m.get('Z0') is not None]
+    k0 = {}
+    if m0:
+        def res0(x):
+            k = factors(x)
+            r = [math.log(abs(zs((m['bus'], m.get('line') or ''), k1, k)[1])) - math.log(abs(m['Z0'])) for m in m0]
+            return np.array(r + ([lam * (v - x.mean()) for v in x] if each else []))
+        k0 = factors(least_squares(res0, np.zeros(n), bounds=(-3, 3), diff_step=1e-3).x)
+    new = _copy(data)
+    for g in grids:
+        mk = new['Grids']['Grid'] == g
+        for c in ('Sk max MVA', 'Sk min MVA'):
+            new['Grids'].loc[mk, c] = pd.to_numeric(new['Grids'].loc[mk, c]) * k1[g]
+        new['Grids'].loc[mk, 'X0/X1'] = pd.to_numeric(new['Grids'].loc[mk, 'X0/X1']) * k0.get(g, 1.0)
     rows = []
     for m in meas:
-        z1o, z0o = model_source(data, m['bus'], m.get('line'))
-        z1n, z0n = model_source(new, m['bus'], m.get('line'))
+        key = (m['bus'], m.get('line') or '')
+        z1o, z0o = zs(key, {}, {})
+        z1n, z0n = zs(key, k1, k0)
         kv = float(data['Buses'].set_index('Bus')['kV'].get(m['bus'], 0) or 0)
         rows.append({'Record': m.get('name', ''), 'Bus': m['bus'], 'Faulted circuit': m.get('line') or '',
                      'Measured Sk (MVA)': round(kv ** 2 / abs(m['Z1'])), 'Model Sk before (MVA)': round(kv ** 2 / abs(z1o)),
                      'Model Sk after (MVA)': round(kv ** 2 / abs(z1n)),
                      'Measured Z0 (ohm)': round(abs(m['Z0']), 1) if m.get('Z0') is not None else np.nan,
                      'Model Z0 before (ohm)': round(abs(z0o), 1), 'Model Z0 after (ohm)': round(abs(z0n), 1)})
-    return new, pd.DataFrame(rows), {'Sk factor': round(k1, 3), 'X0/X1 factor': round(k0, 3), 'grids': grids}
+    Go = data['Grids'].set_index('Grid'); Gn = new['Grids'].set_index('Grid')
+    gt = pd.DataFrame([{'Grid': g, 'Bus': Go.at[g, 'Bus'], 'Sk max before (MVA)': round(float(Go.at[g, 'Sk max MVA'])),
+                        'Sk max after (MVA)': round(float(Gn.at[g, 'Sk max MVA'])), 'Factor': round(k1[g], 3),
+                        'X0/X1 before': round(float(Go.at[g, 'X0/X1']), 2), 'X0/X1 after': round(float(Gn.at[g, 'X0/X1']), 2)} for g in grids])
+    return new, pd.DataFrame(rows), {'grids': grids, 'mode': 'each' if each else 'common', 'table': gt}
 
 
 REF_PREFIX = 'Reference '

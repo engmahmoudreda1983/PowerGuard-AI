@@ -650,6 +650,30 @@ def faultguard_records(incident):
         return []
 
 
+def sk_memory():
+    """Source measurements from every record used in this session (all are fitted together)."""
+    return ss.setdefault('sk_meas', {}).setdefault(ss['ws'], {})
+
+
+def remember(meas):
+    mem = sk_memory()
+    for m in meas:
+        mem[(m.get('name', ''), m['bus'], m.get('line') or '')] = m
+    return list(mem.values())
+
+
+def fit_table(f):
+    """Per-grid result of the fit, with a warning where a grid had to change a lot."""
+    st.dataframe(f['table'], width=STRETCH, hide_index=True)
+    big = f['table'][(f['table']['Factor'] < 0.25) | (f['table']['Factor'] > 4)]
+    if len(big):
+        st.warning('Large change for ' + ', '.join(big['Grid']) + ': the network data between these grids and the recording buses '
+                   '(circuits, transformers) may not match the real network; check it before applying.')
+    if f['mode'] == 'common':
+        st.caption('Records from one measuring point: all grids get the same factor. Records from other buses or other faulted circuits '
+                   'separate the grids.')
+
+
 def calibrate_from_records(recs, line, label, redo=None):
     """Every fault is also a measurement of the network: the source impedance at each recording end of the faulted circuit
     gives the grid short-circuit power. The fitted grid values are offered to the user (ss['fs_cal'])."""
@@ -670,7 +694,7 @@ def calibrate_from_records(recs, line, label, redo=None):
     if not meas or not grids:
         return
     try:
-        new, T, f = ng.fit_grids(D, meas, grids)
+        new, T, f = ng.fit_grids(D, remember(meas), grids)
         ss['fs_cal'] = {'new': new, 'T': T, 'f': f, 'label': label, 'redo': redo}
     except Exception:
         pass
@@ -683,8 +707,9 @@ def show_calibration():
     with st.container(border=True):
         st.markdown(f"##### 📼 Grid short-circuit power measured from this fault ({cal['label']})")
         st.caption('The fault-caused voltage and current at each recording end give the network behind it (V2 = −Zs·I2). '
-                   f"Matching the model needs short-circuit power × {cal['f']['Sk factor']} and X0/X1 × {cal['f']['X0/X1 factor']} for the grids.")
+                   'All the records used in this session are fitted together.')
         st.dataframe(cal['T'], width=STRETCH, hide_index=True)
+        fit_table(cal['f'])
         c1, c2 = st.columns(2)
         if c1.button('✅ Update the grid values' + (' and redo the fault' if cal.get('redo') else ''), type='primary', key='fs_cal_yes'):
             set_data(cal['new']); ss.pop('fs_cal', None)
@@ -706,7 +731,7 @@ def read_record_files(files, fg):
             with _z.ZipFile(io.BytesIO(f.getvalue())) as z:
                 for n in z.namelist():
                     if not n.endswith('/'):
-                        by[n.rsplit('/', 1)[-1]] = z.read(n)
+                        by[n] = z.read(n)          # full path: records of different relays often share a file name
         else:
             by[f.name] = f.getvalue()
     low = {n.lower(): n for n in by}
@@ -823,6 +848,7 @@ def grid_sk_from_records():
                 import zipfile as _z
                 with _z.ZipFile(io.BytesIO(f.getvalue())) as z:
                     names += z.namelist()
+        full = {x.rsplit('/', 1)[-1]: x for x in names}    # a record's own folder path inside the ZIP
         meas = []
         for i, (n, rec) in enumerate(recs):
             try:
@@ -834,7 +860,7 @@ def grid_sk_from_records():
             bsel = c1.selectbox(f"Relay bus — {r['station'] or n}", BUSES, index=BUSES.index(bus) if bus in BUSES else 0, key=f'sk_bus_{i}')
             L = D['Lines']
             at = list(L.loc[(L['From Bus'] == bsel) | (L['To Bus'] == bsel), 'Line'])
-            guess = ng.line_for_relay(D, r['station'], '', [n, r['device'], rec.get('device', '')] + names)[0]
+            guess = ng.line_for_relay(D, r['station'], '', [full.get(n, n), r['device']] + (names if len(recs) == 1 else []))[0]
             fi = faultguard_incidents()
             if guess not in at and len(fi) and 'Circuit' in fi:
                 guess = next((c for c in fi['Circuit'].astype(str)[::-1] if c in at), guess)
@@ -855,19 +881,24 @@ def grid_sk_from_records():
                                    'let you adjust the grids near them separately.')
         z0 = st.checkbox('Also adjust the zero sequence (X0/X1)', value=True, key='sk_z0',
                          help='The zero-sequence value at a double-circuit line includes the mutual coupling of the parallel circuit.')
+        old_n = len([k for k in sk_memory() if k not in {(m['name'], m['bus'], m['line']) for m in meas}])
+        if old_n:
+            c1, c2 = st.columns([3, 1])
+            c1.caption(f'{old_n} record(s) used earlier in this session are fitted together with these.')
+            if c2.button('Forget earlier records', key='sk_forget'):
+                ss['sk_meas'][ss['ws']] = {}; st.rerun()
         if st.button('📐 Fit the grids to the records', key='sk_fit') and gsel:
             with st.spinner('Matching the model to the records...'):
                 try:
                     mm = meas if z0 else [{**m, 'Z0': None} for m in meas]
-                    ss['sk_fit_res'] = ng.fit_grids(D, mm, gsel)
+                    ss['sk_fit_res'] = ng.fit_grids(D, remember(mm), gsel)
                 except Exception as e:
                     st.error(f'Could not fit: {e}')
         fit = ss.get('sk_fit_res')
         if fit:
             new, T, f = fit
-            st.markdown(f"Short-circuit power × **{f['Sk factor']}**, X0/X1 × **{f['X0/X1 factor']}** for {len(f['grids'])} grid(s).")
             st.dataframe(T, width=STRETCH, hide_index=True)
-            st.dataframe(new['Grids'][['Grid', 'Bus', 'Sk max MVA', 'Sk min MVA', 'X0/X1']].round(2), width=STRETCH, hide_index=True)
+            fit_table(f)
             st.caption('The record shows the network as it was at the time of the fault (circuits and units in service that day). '
                        'Several records from different stations and days give a better value.')
             if st.button('✅ Apply these grid values to the network', type='primary', key='sk_apply'):
