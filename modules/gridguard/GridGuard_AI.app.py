@@ -758,10 +758,50 @@ def model_page():
 # ==========================================
 # --- 7. Tabs ---
 # ==========================================
+# ---- about this module: shown open at the top of the overview page (it can be closed)
+ABOUT = {
+ "lead": "Forecasts the load and the winding hot-spot temperature of power transformers for the coming days and the summer peak, from their load history and the weather forecast, and checks overload and insulation ageing before they happen.",
+ "in": [
+  "Load history from the DCS: timestamp + MVA, or MW and MVAr (HV, MV, LV sides)",
+  "Weather forecast (ambient °C), or the normal climate of a Gulf city",
+  "Transformer ratings and a daily load shape (optional)"
+ ],
+ "out": [
+  "Load and hot-spot forecast",
+  "Hours above rating, peak hot-spot, insulation ageing",
+  "Accuracy of the AI forecast model",
+  "Combined PDF report"
+ ],
+ "start": [
+  "Load & Thermal Forecast: choose the transformer and upload its load history",
+  "Choose the weather source and press Analyze",
+  "Check the ageing in Thermal & Ageing Check"
+ ],
+ "pages": [
+  "Substation Overview: every transformer and its risk",
+  "Load & Thermal Forecast, Thermal & Ageing Check",
+  "AI Model & Accuracy",
+  "Combined Report, Historical Study"
+ ],
+ "std": "IEEE C57.91 (loading and ageing) · ISO 55000 / IEC 31010 (risk)"
+}
+
+
+def about_module():
+    with st.expander('ℹ️ About this module: what it does and how to use it', expanded=True):
+        st.markdown(ABOUT['lead'])
+        for (t1, k1), (t2, k2) in ((('What you upload', 'in'), ('What you get', 'out')), (('How to start', 'start'), ('Pages', 'pages'))):
+            for col, title, key in zip(st.columns(2), (t1, t2), (k1, k2)):
+                with col.container(border=True):
+                    st.markdown(f'**{title}**\n\n' + '\n'.join((f'{i + 1}. ' if key == 'start' else '- ') + x for i, x in enumerate(ABOUT[key])))
+        st.caption('Standards: ' + ABOUT['std'])
+
+
 tabs = st.tabs(["🏭 Substation Overview", "⚡ Load & Thermal Forecast", "🌡️ Thermal & Ageing Check", "🧠 AI Model & Accuracy",
                 "📄 Combined Report", "📈 Historical Study"])
 
 with tabs[0]:
+    about_module()
     st.radio("Show", [SRC_PAGES, SRC_DEMO], horizontal=True, key='ov_src')
     R0 = current_records()
     if st.session_state['ov_src'] == SRC_PAGES:

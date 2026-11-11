@@ -494,6 +494,45 @@ def demo_fleet():
     return pd.DataFrame(rows)
 
 
+# ---- about this module: shown open at the top of the overview page (it can be closed)
+ABOUT = {
+ "lead": "Checks the condition of power transformers and shunt reactors from the gases dissolved in their oil (DGA) and from their loading and temperatures, and ranks them by risk so maintenance goes where it is needed first.",
+ "in": [
+  "Oil gas results (DGA): CSV or Excel, one row per sample",
+  "Loading and temperatures from SCADA (optional)",
+  "Failures and trips history, asset list with ratings"
+ ],
+ "out": [
+  "Fault type from the gases (Duval triangle, IEEE gas conditions)",
+  "Hot-spot temperature, ageing and remaining life",
+  "Health index, risk ranking (P1–P4) and FMEA register",
+  "PDF diagnostic report"
+ ],
+ "start": [
+  "Open DGA Analysis and enter one sample, or upload a file in Batch Analysis",
+  "Add loading data in Thermal Load",
+  "Read the ranking in Fleet Overview and Asset Risk & FMEA"
+ ],
+ "pages": [
+  "Fleet Overview: all units and their risk",
+  "DGA Analysis: one oil sample",
+  "Thermal Load: hot-spot and ageing",
+  "Asset Risk & FMEA, Batch Analysis, AI Diagnostic Report, Historical Study"
+ ],
+ "std": "IEC 60599 · IEEE C57.104 (gases) · IEEE C57.91 (loading and ageing) · ISO 55000 / IEC 31010 (risk)"
+}
+
+
+def about_module():
+    with st.expander('ℹ️ About this module: what it does and how to use it', expanded=True):
+        st.markdown(ABOUT['lead'])
+        for (t1, k1), (t2, k2) in ((('What you upload', 'in'), ('What you get', 'out')), (('How to start', 'start'), ('Pages', 'pages'))):
+            for col, title, key in zip(st.columns(2), (t1, t2), (k1, k2)):
+                with col.container(border=True):
+                    st.markdown(f'**{title}**\n\n' + '\n'.join((f'{i + 1}. ' if key == 'start' else '- ') + x for i, x in enumerate(ABOUT[key])))
+        st.caption('Standards: ' + ABOUT['std'])
+
+
 tabs = st.tabs(["🏭 Fleet Overview", "🧪 DGA Analysis", "🌡️ Thermal Load", "📑 Asset Risk & FMEA",
                 "📁 Batch Analysis", "📄 AI Diagnostic Report", "📈 Historical Study"])
 
@@ -1056,6 +1095,7 @@ with tabs[6]:
 # ==========================================
 SRC_PAGES, SRC_DEMO = "Results from the Asset Risk & FMEA page", "Demo fleet (synthetic)"
 with tabs[0]:
+    about_module()
     ov_src = st.radio("Show", [SRC_PAGES, SRC_DEMO], horizontal=True, key='ov_src')
     if ov_src == SRC_PAGES:
         st.markdown("<div class='pg-note'>Every transformer and reactor evaluated on the <b>Asset Risk &amp; FMEA</b> page "

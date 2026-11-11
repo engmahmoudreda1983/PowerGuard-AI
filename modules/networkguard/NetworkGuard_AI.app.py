@@ -286,11 +286,53 @@ with c2:
                 f"{len(d0['Buses'])} buses, {len(d0['Lines'])} circuits, {len(d0['Transformers'])} transformers, {len(d0['Relays'])} relays"
                 f"{' · simulated values, anonymised names' if ss['ws'] == 'demo' else ''}</div>", unsafe_allow_html=True)
 
+# ---- about this module: shown open at the top of the overview page (it can be closed)
+ABOUT = {
+ "lead": "Builds the transmission network from the single-line diagram and the relay settings, and runs the network studies: load flow, short circuit, protection coordination, N-1, and real faults taken from FaultGuard or from disturbance records.",
+ "in": [
+  "Single-line diagram (PDF drawing)",
+  "Relay settings (.set files or the settings project as .zip)",
+  "Transformer and reactor documents, neighbouring-grid values",
+  "Disturbance records of real faults (optional)"
+ ],
+ "out": [
+  "Network drawing and 3D view",
+  "Bus voltages, line loading, losses",
+  "Fault levels against breaker ratings",
+  "Which relays trip, in which order, main and back-up",
+  "Grid short-circuit power measured from real faults"
+ ],
+ "start": [
+  "Single-Line Diagram: upload the drawing",
+  "Equipment Data: upload the relay settings, check the missing values",
+  "Run Load Flow or Short Circuit, or apply a fault in Fault Study"
+ ],
+ "pages": [
+  "Single-Line Diagram, Equipment Data",
+  "Load Flow, Voltage Drop, Short Circuit",
+  "Protection, N-1 Contingency",
+  "Fault Study (with 3D playback), Report"
+ ],
+ "std": "IEC 60909 (short circuit) · IEC 60255-151 (relay curves) · IEEE test networks for verification"
+}
+
+
+def about_module():
+    with st.expander('ℹ️ About this module: what it does and how to use it', expanded=True):
+        st.markdown(ABOUT['lead'])
+        for (t1, k1), (t2, k2) in ((('What you upload', 'in'), ('What you get', 'out')), (('How to start', 'start'), ('Pages', 'pages'))):
+            for col, title, key in zip(st.columns(2), (t1, t2), (k1, k2)):
+                with col.container(border=True):
+                    st.markdown(f'**{title}**\n\n' + '\n'.join((f'{i + 1}. ' if key == 'start' else '- ') + x for i, x in enumerate(ABOUT[key])))
+        st.caption('Standards: ' + ABOUT['std'])
+
+
 tabs = st.tabs(['🏠 Overview', '🗺️ Single-Line Diagram', '📋 Equipment Data', '⚡ Load Flow', '📉 Voltage Drop', '💥 Short Circuit',
                 '🛡️ Protection Coordination', '🔁 N-1 Contingency', '⚡ Fault Study', '📄 Combined Report'])
 
 # ============================================================== 0. Overview
 with tabs[0]:
+    about_module()
     D, R = data(), res()
     if ss['ws'] == 'real' and not len(D['Buses']):
         st.markdown('#### Start with your network in three steps')
