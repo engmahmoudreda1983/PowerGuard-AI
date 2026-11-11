@@ -481,6 +481,8 @@ def build(data, mode='pf', case='max', outages=(), load_scale=1.0, reactors_off=
             if r['Bus'] not in B or r['Grid'] in outages:
                 continue
             skmax = float(r['Sk max MVA']) if not pd.isna(r['Sk max MVA']) else 10000.0
+            if skmax <= 0:                                   # load-flow reference only, no short-circuit source
+                continue
             skmin = float(r['Sk min MVA']) if not pd.isna(r['Sk min MVA']) else 0.6 * skmax
             pp.create_ext_grid(net, B[r['Bus']], vm_pu=1.0, name=r['Grid'], s_sc_max_mva=skmax, s_sc_min_mva=skmin,
                                rx_max=float(r['R/X']), rx_min=float(r['R/X']), x0x_max=float(r['X0/X1']), x0x_min=float(r['X0/X1']),
@@ -636,6 +638,157 @@ def fault_contributions(data, bus, case='max', fault='3ph', net=None):
                      'I From (kA)': round(float(r['ikss_hv_ka']), 3) if r is not None else np.nan, 'I To (kA)': round(float(r['ikss_lv_ka']), 3) if r is not None else np.nan})
     grid = []
     return {'bus': bus, 'fault': fault, 'Ik (kA)': round(ik, 3), 'branches': pd.DataFrame(rows), 'grids': grid}
+
+
+# ------------------------------------------------------------------ grid short-circuit power from disturbance records
+# During a fault the network behind a relay is passive for the fault-caused (superimposed) quantities, so at the relay bus
+#   V2 = -Zs2 * I2,  V0 = -Zs0 * I0,  dV1 = -Zs1 * dI1   (I measured from the bus into the protected line)
+# Zs is the Thevenin impedance of everything behind the relay (all grids and all other circuits, the faulted circuit excluded).
+# Sk = U^2 / |Zs| (IEC 60909-0 equivalent source). The model gives the same impedance with the faulted circuit out of service,
+# so the grid short-circuit powers can be adjusted until the model matches the records.
+_A = np.exp(2j * np.pi / 3)
+
+
+def _seq3(xa, xb, xc):
+    return (xa + xb + xc) / 3, (xa + _A * xb + _A * _A * xc) / 3, (xa + _A * _A * xb + _A * xc) / 3
+
+
+def record_source(rec, scale='Auto', ct=1.0, vt=1.0):
+    """Source impedance behind the relay from one COMTRADE record (faultguard_core record dict).
+    Returns station, device, kV, Z1/Z0 (complex ohm, primary), Sk (MVA), X/R, X0/X1, R0/X0 and the way it was found."""
+    import faultguard_core as fg
+    A = fg.scale_primary(rec, scale, ct, vt)
+    ch = fg.map_channels(rec)
+    if any(ch.get(k) is None for k in ('IA', 'IB', 'IC', 'VA', 'VB', 'VC')):
+        raise ValueError('the record has no three phase currents and voltages')
+    ev = fg.detect(rec, A, ch)
+    if ev.get('inception') is None:
+        raise ValueError('no fault found in the record')
+    P = fg.fault_phasors(A, ch, ev, ev['N'])
+    Vp = _seq3(*[P['V' + p][0] for p in 'ABC']); Vf = _seq3(*[P['V' + p][1] for p in 'ABC'])
+    Ip = _seq3(*[P['I' + p][0] for p in 'ABC']); If = _seq3(*[P['I' + p][1] for p in 'ABC'])
+    kv = abs(Vp[1]) * math.sqrt(3) / 1000.0
+    notes = []
+    dI1 = If[1] - Ip[1]
+    if abs(If[2]) > 0.05 * abs(dI1) and abs(If[2]) > 20:          # unbalanced fault: negative sequence (no load in it)
+        z1, how = -Vf[2] / If[2], 'negative sequence (V2 / I2)'
+    elif abs(dI1) > 20:
+        z1, how = -(Vf[1] - Vp[1]) / dI1, 'positive sequence change (dV1 / dI1)'
+    else:
+        raise ValueError('the fault current change is too small to measure the source')
+    flip = z1.imag < 0                                           # current polarity towards the bus
+    if flip:
+        z1 = -z1; notes.append('current polarity is towards the bus; sign corrected')
+    z0 = None
+    if abs(If[0]) > 0.05 * abs(dI1) and abs(If[0]) > 20:
+        z0 = -Vf[0] / If[0] * (-1 if flip else 1)
+        if z0.imag <= 0:
+            z0 = None; notes.append('zero sequence not usable')
+    sk = kv ** 2 / abs(z1) if kv > 1 else np.nan
+    return {'station': rec.get('station') or '', 'device': rec.get('device') or '', 'kV': round(kv, 1), 'Z1': z1, 'Z0': z0,
+            'Sk MVA': round(sk, 0), 'X/R': round(z1.imag / z1.real, 1) if z1.real > 0 else np.nan,
+            'X0/X1': round(z0.imag / z1.imag, 2) if z0 is not None else np.nan,
+            'R0/X0': round(z0.real / z0.imag, 2) if z0 is not None else np.nan, 'method': how, 'notes': notes}
+
+
+def bus_for_station(data, station, kv=None):
+    """Bus of the substation most like a recorder's station name (nearest voltage when the substation has several)."""
+    B = data['Buses']
+    if not len(B):
+        return None
+    s = [max(station_sim(station, r['Substation']), station_sim(station, r['Bus'])) for _, r in B.iterrows()]
+    best = max(s)
+    if best < 0.6:
+        return None
+    cand = B[[x >= best - 1e-9 for x in s]]
+    if kv and len(cand) > 1:
+        cand = cand.iloc[(pd.to_numeric(cand['kV'], errors='coerce') - kv).abs().argsort()]
+    return cand.iloc[0]['Bus']
+
+
+def model_source(data, bus, line=None, case='max'):
+    """Thevenin impedance (complex ohm) of the model at a bus with the faulted circuit out: Z1 and Z0."""
+    net = build(data, 'sc', outages=tuple([line]) if line else ())
+    bi = net.bus.index[net.bus.name == bus][0]
+    sc.calc_sc(net, case=case, fault='1ph', bus=bi)
+    r = net.res_bus_sc.loc[bi]
+    return complex(r['rk_ohm'], r['xk_ohm']), complex(r['rk0_ohm'], r['xk0_ohm'])
+
+
+def _copy(data):
+    return {k: v.copy() for k, v in data.items()}
+
+
+def _scaled(data, grids, k1, k0=1.0):
+    d = _copy(data)
+    G = d['Grids']
+    m = G['Grid'].isin(grids)
+    for c in ('Sk max MVA', 'Sk min MVA'):
+        G.loc[m, c] = pd.to_numeric(G.loc[m, c], errors='coerce') * k1
+    if k0 != 1.0:
+        x0 = pd.to_numeric(G.loc[m, 'X0/X1'], errors='coerce').fillna(1.0)
+        G.loc[m, 'X0/X1'] = x0 * k0
+    return d
+
+
+def fit_grids(data, meas, grids=None):
+    """Adjust the short-circuit power (one factor) and the X0/X1 (one factor) of the chosen grids so that the model's
+    source impedances match the measured ones. meas: list of {'bus', 'line', 'Z1', 'Z0'}.
+    Returns the new data, the comparison table and the factors."""
+    from scipy.optimize import minimize_scalar
+    d0, _ = filled(data)
+    grids = list(grids) if grids else list(d0['Grids']['Grid'])
+    G = data['Grids']
+    if G['Sk max MVA'].isna().any():                               # start from the values the model uses
+        data = _copy(data); m = data['Grids']['Sk max MVA'].isna()
+        data['Grids'].loc[m, 'Sk max MVA'] = 10000.0
+        data['Grids'].loc[data['Grids']['Sk min MVA'].isna(), 'Sk min MVA'] = 0.6 * pd.to_numeric(data['Grids']['Sk max MVA'])
+    meas = [m for m in meas if m.get('bus')]
+
+    def err1(lk):
+        d = _scaled(data, grids, math.exp(lk))
+        return sum((math.log(abs(model_source(d, m['bus'], m.get('line'))[0])) - math.log(abs(m['Z1']))) ** 2 for m in meas)
+
+    def err0(lk, k1):
+        d = _scaled(data, grids, k1, math.exp(lk))
+        return sum((math.log(abs(model_source(d, m['bus'], m.get('line'))[1])) - math.log(abs(m['Z0']))) ** 2
+                   for m in meas if m.get('Z0') is not None)
+
+    k1 = math.exp(minimize_scalar(err1, bounds=(-4, 4), method='bounded', options={'xatol': 1e-3}).x)
+    has0 = any(m.get('Z0') is not None for m in meas)
+    k0 = math.exp(minimize_scalar(lambda x: err0(x, k1), bounds=(-3, 3), method='bounded', options={'xatol': 1e-3}).x) if has0 else 1.0
+    new = _scaled(data, grids, k1, k0)
+    rows = []
+    for m in meas:
+        z1o, z0o = model_source(data, m['bus'], m.get('line'))
+        z1n, z0n = model_source(new, m['bus'], m.get('line'))
+        kv = float(data['Buses'].set_index('Bus')['kV'].get(m['bus'], 0) or 0)
+        rows.append({'Record': m.get('name', ''), 'Bus': m['bus'], 'Faulted circuit': m.get('line') or '',
+                     'Measured Sk (MVA)': round(kv ** 2 / abs(m['Z1'])), 'Model Sk before (MVA)': round(kv ** 2 / abs(z1o)),
+                     'Model Sk after (MVA)': round(kv ** 2 / abs(z1n)),
+                     'Measured Z0 (ohm)': round(abs(m['Z0']), 1) if m.get('Z0') is not None else np.nan,
+                     'Model Z0 before (ohm)': round(abs(z0o), 1), 'Model Z0 after (ohm)': round(abs(z0n), 1)})
+    return new, pd.DataFrame(rows), {'Sk factor': round(k1, 3), 'X0/X1 factor': round(k0, 3), 'grids': grids}
+
+
+REF_PREFIX = 'Reference '
+
+
+def set_slack(data, name):
+    """Make a grid, or any bus, the reference (slack) of the load flow. A bus without a grid gets a balancing source that
+    exists only in the load flow (no short-circuit contribution)."""
+    d = _copy(data)
+    G = d['Grids'][~d['Grids']['Grid'].astype(str).str.startswith(REF_PREFIX)].reset_index(drop=True)
+    if name in set(G['Grid']):
+        G['Slack'] = (G['Grid'] == name).astype(int)
+    else:
+        G['Slack'] = 0
+        row = {c: np.nan for c in G.columns}
+        row.update({'Grid': REF_PREFIX + str(name), 'Bus': name, 'Slack': 1, 'P Import MW': 0.0, 'V Setpoint pu': 1.0,
+                    'Sk max MVA': 0.0, 'Sk min MVA': 0.0})
+        G = pd.concat([G, pd.DataFrame([row])], ignore_index=True)
+    d['Grids'] = G
+    return d
 
 
 # ------------------------------------------------------------------ protection

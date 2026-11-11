@@ -636,6 +636,42 @@ def lf_inputs(prefix):
     return scale, tuple(outs), tuple(roff), warn
 
 
+def fg_engine():
+    """FaultGuard engine and its fault-type model (reads disturbance records and event lists)."""
+    import faultguard_core as fg
+    return fg, fg.load_model(pg_paths.model('faultguard_model.pkl'))
+
+
+def read_record_files(files, fg):
+    import zipfile as _z
+    by = {}
+    for f in files:
+        if f.name.lower().endswith('.zip'):
+            with _z.ZipFile(io.BytesIO(f.getvalue())) as z:
+                for n in z.namelist():
+                    if not n.endswith('/'):
+                        by[n.rsplit('/', 1)[-1]] = z.read(n)
+        else:
+            by[f.name] = f.getvalue()
+    low = {n.lower(): n for n in by}
+    out = []
+    for n in by:
+        if n.lower().endswith('.cfg'):
+            dn = low.get(n[:-4].lower() + '.dat')
+            if dn:
+                out.append((n, fg.read_comtrade(by[n].decode('latin-1'), by[dn])))
+    return out
+
+
+def faultguard_incidents():
+    """Incidents analysed in FaultGuard on the PowerGuard AI platform (same session)."""
+    try:
+        reg = ss.get('_pg_store', {}).get('faultguard', {}).get('register') or []
+        return pd.DataFrame(reg)
+    except Exception:
+        return pd.DataFrame()
+
+
 def demo_note():
     if ss['ws'] == 'demo':
         st.caption('🧪 Demo network: simulated values and anonymised names.')
@@ -644,6 +680,17 @@ def demo_note():
 # ============================================================== 3. Load flow
 with tabs[3]:
     demo_note()
+    G_ = D['Grids']
+    if len(G_):
+        cur = G_.loc[G_['Slack'] == 1, 'Grid']
+        cur = (str(cur.iloc[0])) if len(cur) else ''
+        opts = [g for g in G_['Grid'] if not str(g).startswith(ng.REF_PREFIX)] + [b for b in BUSES if b not in set(G_.loc[~G_['Grid'].astype(str).str.startswith(ng.REF_PREFIX), 'Bus'])]
+        now = cur[len(ng.REF_PREFIX):] if cur.startswith(ng.REF_PREFIX) else cur
+        ref = st.selectbox('Reference (slack) of the load flow: a grid or a bus', opts, index=opts.index(now) if now in opts else 0, key='lf_slack',
+                           help='Balances the load flow and keeps its bus voltage. A bus without a grid gets a balancing source used in the load flow only '
+                                '(no short-circuit contribution); the other grids import the power set in their data.')
+        if ref != now:
+            set_data(ng.set_slack(D, ref)); D = data()
     scale, outs, roff, warn = lf_inputs('lf')
     if st.button('⚡ Analyze load flow', type='primary', key='lf_go') and ready():
         with st.spinner('Newton-Raphson load flow...'):
@@ -701,6 +748,76 @@ with tabs[4]:
     else:
         st.info('Set the case and press Analyze.')
 
+def grid_sk_from_records():
+    """Neighbouring-grid short-circuit power measured from real disturbance records."""
+    with st.expander('📼 Grid short-circuit power from disturbance records', expanded=False):
+        st.caption('Upload records (CFG and DAT, or a ZIP) of real faults. At the relay bus the fault-caused voltage and current give the impedance of '
+                   'everything behind the relay (grids and the other circuits): V2 = −Zs·I2, V0 = −Zs0·I0. The model gives the same impedance with the faulted '
+                   'circuit out; the short-circuit power and X0/X1 of the chosen grids are adjusted until the model matches the records.')
+        files = st.file_uploader('Disturbance records', type=['cfg', 'dat', 'zip', 'CFG', 'DAT', 'ZIP'], accept_multiple_files=True, key='sk_files')
+        if not files:
+            return
+        fg, _ = fg_engine()
+        recs = read_record_files(files, fg)
+        if not recs:
+            st.warning('No CFG with its DAT file was found.'); return
+        names = [f.name for f in files]
+        for f in files:                                   # folder names inside a ZIP often carry the circuit name
+            if f.name.lower().endswith('.zip'):
+                import zipfile as _z
+                with _z.ZipFile(io.BytesIO(f.getvalue())) as z:
+                    names += z.namelist()
+        meas = []
+        for i, (n, rec) in enumerate(recs):
+            try:
+                r = ng.record_source(rec)
+            except Exception as e:
+                st.warning(f'{n}: {e}'); continue
+            bus = ng.bus_for_station(D, r['station'], r['kV'])
+            c1, c2, c3 = st.columns([2, 2, 3])
+            bsel = c1.selectbox(f"Relay bus — {r['station'] or n}", BUSES, index=BUSES.index(bus) if bus in BUSES else 0, key=f'sk_bus_{i}')
+            L = D['Lines']
+            at = list(L.loc[(L['From Bus'] == bsel) | (L['To Bus'] == bsel), 'Line'])
+            guess = ng.line_for_relay(D, r['station'], '', [n, r['device'], rec.get('device', '')] + names)[0]
+            fi = faultguard_incidents()
+            if guess not in at and len(fi) and 'Circuit' in fi:
+                guess = next((c for c in fi['Circuit'].astype(str)[::-1] if c in at), guess)
+            lsel = c2.selectbox('Faulted circuit (taken out)', at or LINES, index=(at or LINES).index(guess) if guess in (at or LINES) else None,
+                                placeholder='Choose the circuit that had the fault', key=f'sk_line_{i}')
+            c3.markdown(f"**{r['kV']:.0f} kV**, Zs = {abs(r['Z1']):.2f} Ω ∠{np.degrees(np.angle(r['Z1'])):.0f}° → **Sk ≈ {r['Sk MVA']:,.0f} MVA**, X/R {r['X/R']}"
+                        + (f", Zs0 = {abs(r['Z0']):.1f} Ω" if r['Z0'] is not None else '') + f"  \n<small>{r['method']}; {'; '.join(r['notes'])}</small>",
+                        unsafe_allow_html=True)
+            if lsel:
+                meas.append({'name': n, 'bus': bsel, 'line': lsel, 'Z1': r['Z1'], 'Z0': r['Z0']})
+        if not meas or not len(D['Grids']):
+            if not len(D['Grids']):
+                st.info('Add the grids to the network first.')
+            return
+        gl_ = [g for g in D['Grids']['Grid'] if not str(g).startswith(ng.REF_PREFIX)]
+        gsel = st.multiselect('Grids to adjust', gl_, default=gl_, key='sk_grids',
+                              help='One record fixes one value: all the chosen grids are scaled by the same factor. Records from other stations '
+                                   'let you adjust the grids near them separately.')
+        z0 = st.checkbox('Also adjust the zero sequence (X0/X1)', value=True, key='sk_z0',
+                         help='The zero-sequence value at a double-circuit line includes the mutual coupling of the parallel circuit.')
+        if st.button('📐 Fit the grids to the records', key='sk_fit') and gsel:
+            with st.spinner('Matching the model to the records...'):
+                try:
+                    mm = meas if z0 else [{**m, 'Z0': None} for m in meas]
+                    ss['sk_fit_res'] = ng.fit_grids(D, mm, gsel)
+                except Exception as e:
+                    st.error(f'Could not fit: {e}')
+        fit = ss.get('sk_fit_res')
+        if fit:
+            new, T, f = fit
+            st.markdown(f"Short-circuit power × **{f['Sk factor']}**, X0/X1 × **{f['X0/X1 factor']}** for {len(f['grids'])} grid(s).")
+            st.dataframe(T, width=STRETCH, hide_index=True)
+            st.dataframe(new['Grids'][['Grid', 'Bus', 'Sk max MVA', 'Sk min MVA', 'X0/X1']].round(2), width=STRETCH, hide_index=True)
+            st.caption('The record shows the network as it was at the time of the fault (circuits and units in service that day). '
+                       'Several records from different stations and days give a better value.')
+            if st.button('✅ Apply these grid values to the network', type='primary', key='sk_apply'):
+                set_data(new); ss.pop('sk_fit_res', None); st.success('Grid values updated. Run the analyses again.'); st.rerun()
+
+
 # ============================================================== 5. Short circuit
 with tabs[5]:
     demo_note()
@@ -745,6 +862,7 @@ with tabs[5]:
         st.download_button('📄 Short circuit report (PDF)', pdfrep.study_pdf(D, {'sc': scr}, 'Short Circuit Study', ss['names'][ss['ws']]), 'Short_Circuit_Report.pdf', key='sc_pdf')
     else:
         st.info('Choose the case and press Analyze.')
+    grid_sk_from_records()
 
 # ============================================================== 6. Protection
 with tabs[6]:
@@ -813,21 +931,6 @@ with tabs[7]:
 
 # ============================================================== 8. Fault study
 @st.cache_resource(show_spinner=False)
-def fg_engine():
-    """FaultGuard engine and its fault-type model (reads disturbance records and event lists)."""
-    import faultguard_core as fg
-    return fg, fg.load_model(pg_paths.model('faultguard_model.pkl'))
-
-
-def faultguard_incidents():
-    """Incidents analysed in FaultGuard on the PowerGuard AI platform (same session)."""
-    try:
-        reg = ss.get('_pg_store', {}).get('faultguard', {}).get('register') or []
-        return pd.DataFrame(reg)
-    except Exception:
-        return pd.DataFrame()
-
-
 def _num(v):
     try:
         import re as _re
@@ -843,27 +946,6 @@ def end_of(station, line_row):
     sc_ = {side: ng.station_sim(station, sub.get(b, b)) for side, b in (('from', line_row['From Bus']), ('to', line_row['To Bus']))}
     best = max(sc_, key=sc_.get)
     return best if sc_[best] >= 0.6 and sc_[best] > min(sc_.values()) else None
-
-
-def read_record_files(files, fg):
-    import zipfile as _z
-    by = {}
-    for f in files:
-        if f.name.lower().endswith('.zip'):
-            with _z.ZipFile(io.BytesIO(f.getvalue())) as z:
-                for n in z.namelist():
-                    if not n.endswith('/'):
-                        by[n.rsplit('/', 1)[-1]] = z.read(n)
-        else:
-            by[f.name] = f.getvalue()
-    low = {n.lower(): n for n in by}
-    out = []
-    for n in by:
-        if n.lower().endswith('.cfg'):
-            dn = low.get(n[:-4].lower() + '.dat')
-            if dn:
-                out.append((n, fg.read_comtrade(by[n].decode('latin-1'), by[dn])))
-    return out
 
 
 with tabs[8]:
