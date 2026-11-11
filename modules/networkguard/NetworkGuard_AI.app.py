@@ -286,7 +286,10 @@ def fix_panel(page):
     d = data()
     miss = ng.missing_required(d, study)
     if not miss:
-        ss.pop(f'fix_{page}', None); return
+        ss.pop(f'fix_{page}', None)
+        if ss.get(f'fix_msg_{page}'):
+            st.success(ss.pop(f'fix_msg_{page}') + ' All the values are in: press Analyze again.')
+        return
     M = pd.DataFrame(miss, columns=['Table', 'Equipment', 'Parameter'])
     with st.container(border=True):
         st.warning(f"{len(miss)} required value(s) are missing, so this analysis cannot run yet. Fill them in the tables below and press "
@@ -301,16 +304,49 @@ def fix_panel(page):
             cfg = {f: st.column_config.NumberColumn(f, help=ng.SCHEMA[k][f][1]) for f in fields if ng.SCHEMA[k][f][3] == 'num'}
             edits[k] = (idc, fields, st.data_editor(sub.reset_index(drop=True), key=f'fix_{page}_{k}', hide_index=True, width=STRETCH,
                                                     disabled=[c for c in sub.columns if c not in fields], column_config=cfg))
-        if st.button('💾 Save these values', type='primary', key=f'fix_save_{page}'):
+        def merge(tables):
             d2 = {k: v.copy() for k, v in d.items()}
-            for k, (idc, fields, ed) in edits.items():
+            n = 0
+            for k, (idc, fields, _) in edits.items():
+                ed = tables.get(k)
+                if ed is None or idc not in ed.columns:
+                    continue
                 T = d2[k].set_index(idc)
                 for _, r in ed.iterrows():
+                    if r[idc] not in T.index:
+                        continue
                     for f in fields:
-                        if pd.notna(r[f]) and r[f] != '':
-                            T.at[r[idc], f] = r[f]
+                        if f in ed.columns and pd.notna(r[f]) and str(r[f]).strip() != '':
+                            v = pd.to_numeric(r[f], errors='coerce') if ng.SCHEMA[k][f][3] == 'num' else r[f]
+                            if not (isinstance(v, float) and pd.isna(v)):
+                                T.at[r[idc], f] = v; n += 1
                 d2[k] = T.reset_index()
+            return d2, n
+
+        b1, b2, b3 = st.columns([1, 1, 2])
+        if b1.button('💾 Save these values', type='primary', key=f'fix_save_{page}'):
+            d2, _ = merge({k: e for k, (_, _, e) in edits.items()})
             set_data(d2); st.rerun()
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as w:
+            for k, (_, _, e) in edits.items():
+                e.to_excel(w, sheet_name=k[:31], index=False)
+        b2.download_button('⬇️ These values as Excel', buf.getvalue(), 'NetworkGuard_missing_values.xlsx', key=f'fix_xl_{page}',
+                           help='Fill the empty cells in Excel and upload the file here.')
+        up = b3.file_uploader('⬆️ Upload a filled Excel (same sheets and columns)', type=['xlsx'], key=f'fix_up_{page}')
+        if up is not None and ss.get(f'fix_done_{page}') != up.file_id:
+            try:
+                tables = pd.read_excel(io.BytesIO(up.getvalue()), sheet_name=None)
+                d2, n = merge(tables)
+                ss[f'fix_done_{page}'] = up.file_id
+                if n:
+                    set_data(d2); ss[f'fix_msg_{page}'] = f'{n} value(s) taken from {up.name}.'; st.rerun()
+                else:
+                    st.warning(f'No values found in {up.name}: fill the empty cells of the downloaded file and upload it again.')
+            except Exception as e:
+                st.error(f'Could not read {up.name}: {e}')
+        if ss.get(f'fix_msg_{page}'):
+            st.success(ss.pop(f'fix_msg_{page}'))
 
 
 # ---------------------------------------------------------------- network selector
@@ -1125,6 +1161,75 @@ def end_of(station, line_row):
     return best if sc_[best] >= 0.6 and sc_[best] > min(sc_.values()) else None
 
 
+def fault_from_files():
+    """A real fault from its own files: disturbance records, event lists and relay settings, read with the FaultGuard engine."""
+    c1, c2, c3 = st.columns(3)
+    recs_up = c1.file_uploader('Disturbance records (COMTRADE .cfg + .dat or .zip), any number of relays', type=['cfg', 'dat', 'zip'],
+                               accept_multiple_files=True, key='fs_rec')
+    ev_up = c2.file_uploader('Event lists (PDF, picture, CSV, TXT, Excel), optional', type=['pdf', 'png', 'jpg', 'jpeg', 'csv', 'txt', 'xlsx', 'xls'],
+                             accept_multiple_files=True, key='fs_ev')
+    set_up = c3.file_uploader('Relay settings (MiCOM .set, PDF, picture, CSV, TXT, Excel), optional',
+                              type=['set', 'SET', 'pdf', 'png', 'jpg', 'jpeg', 'csv', 'txt', 'xlsx', 'xls'], accept_multiple_files=True, key='fs_set')
+    if recs_up:
+        fg, model = fg_engine()
+        recs = read_record_files(recs_up, fg)
+        if not recs:
+            st.warning('No complete record: upload each .cfg with its .dat.')
+        else:
+            names = ' '.join(f"{rc.get('station', '')} {rc.get('device', '')} {n}" for n, rc in recs)
+            g, _, _ = ng.line_for_relay(D, recs[0][1].get('station', '') or '', '', [f.name for f in recs_up] + [n for n, _ in recs])
+            if g is None:
+                g, _ = ng.match_line(names, D)
+            ln = st.selectbox('Line of the fault', LINES, index=LINES.index(g) if g in LINES else 0, key='fs_rec_line')
+            if st.button('🔎 Read the records', type='primary', key='fs_read'):
+                with st.spinner('Reading the records with the FaultGuard engine...'):
+                    Lrow = ng.filled(D)[0]['Lines'].set_index('Line').loc[ln]
+                    kv = float(D['Buses'].set_index('Bus').at[Lrow['From Bus'], 'kV'])
+                    line_d = {'length_km': float(Lrow['Length km']), 'r1': float(Lrow['R1 ohm/km']), 'x1': float(Lrow['X1 ohm/km']),
+                              'r0': float(Lrow['R0 ohm/km']), 'x0': float(Lrow['X0 ohm/km']), 'kv': kv}
+                    events = []
+                    settings = []
+                    for f in set_up or []:
+                        try:
+                            sv = fg.read_settings_file(f.getvalue(), f.name)
+                            if sv:
+                                settings.append((f.name, sv))
+                        except Exception:
+                            pass
+                    for f in ev_up or []:
+                        try:
+                            e = fg.parse_events(f.getvalue(), f.name)
+                            if len(e):
+                                events.append((f.name, e))
+                        except Exception:
+                            pass
+                    try:
+                        a, rec = fg.analyze_incident(recs, events or None, settings or None, line_d, None, model=model)
+                        ends = {}
+                        for n, rc in recs:
+                            try:
+                                ai = fg.analyze(rc, None, line_d, None, model=model)
+                                side = end_of(rc.get('station', '') or n, Lrow.to_dict())
+                                if side and ai.get('I_fault_max_kA'):
+                                    ends[side] = (ai['I_fault_max_kA'], ai.get('loc_km'), rc.get('station', '') or n)
+                            except Exception:
+                                continue
+                        main_side = end_of(rec.get('station', ''), Lrow.to_dict()) or 'from'
+                        if not ends and a.get('I_fault_max_kA'):     # recorder station not recognised: its current goes to the From end
+                            ends[main_side] = (a['I_fault_max_kA'], a.get('loc_km'), rec.get('station', '') or 'record')
+                        loc = a.get('loc_km')
+                        d_from = (Lrow['Length km'] - loc) if (loc is not None and main_side == 'to') else loc
+                        ss['fs_pre'] = {'line': ln, 'd_km': d_from, 'type': str(a.get('type', '') or 'AG').upper(),
+                                        'I_from': ends.get('from', (None,))[0], 'I_to': ends.get('to', (None,))[0],
+                                        'note': f"Records: {', '.join(n for n, _ in recs)}. FaultGuard: {a.get('type')} fault, "
+                                                f"{a.get('I_fault_max_kA', 0):.2f} kA, {('%.1f km from ' % loc + str(rec.get('station') or 'the recording end')) if loc is not None else 'not located'}."
+                                                + ''.join(f" {s.title()} end ({v[2]}): {v[0]:.2f} kA." for s, v in ends.items())}
+                        calibrate_from_records(recs, ln, 'uploaded records')
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f'Could not analyse the records: {e}')
+
+
 with tabs[8]:
     demo_note()
     st.markdown("<div class='pg-note'>Study a real fault on a line: take it from <b>FaultGuard</b>, read it from the <b>disturbance records and event "
@@ -1133,16 +1238,18 @@ with tabs[8]:
     if not LINES:
         st.info('Build the network first: the fault is placed on one of its lines.')
     else:
-        src = st.radio('Fault from', ['🔍 FaultGuard', '📂 Disturbance records and events', '✍️ Enter by hand'], horizontal=True, key='fs_src')
+        src = st.radio('Fault from', ['🔍 FaultGuard', '📂 Fault files (records, events, settings)', '✍️ Enter by hand'], horizontal=True, key='fs_src')
         pre = ss.get('fs_pre', {})
         if src.startswith('🔍'):
             I = faultguard_incidents()
             if I.empty:
-                st.caption('No FaultGuard incidents in this session. On the PowerGuard AI platform the incidents analysed in FaultGuard appear here; '
-                           'here you can upload the FaultGuard incidents CSV.')
-                up = st.file_uploader('FaultGuard incidents (CSV)', type=['csv'], key='fs_fgcsv')
-                if up is not None:
-                    I = pd.read_csv(up)
+                st.info('No incident has been analysed in FaultGuard in this session. Upload the fault files here: NetworkGuard reads them '
+                        'with the FaultGuard engine (records from one or both ends, event lists and relay settings).')
+                fault_from_files()
+                with st.expander('Or load a FaultGuard incidents export (CSV)'):
+                    up = st.file_uploader('FaultGuard incidents (CSV)', type=['csv'], key='fs_fgcsv')
+                    if up is not None:
+                        I = pd.read_csv(up)
             if not I.empty:
                 I = I.reset_index(drop=True)
                 lab = [f"{r.get('Incident', i)} · {r.get('Date', '')} · {r.get('Line', '')} · {r.get('Fault Type', '')}" for i, r in I.iterrows()]
@@ -1181,61 +1288,7 @@ with tabs[8]:
                         calibrate_from_records(faultguard_records(r.get('Incident')), ln, f"FaultGuard incident {r.get('Incident', '')}", (ln, dk_, ft_, 0.0))
                     st.rerun()
         elif src.startswith('📂'):
-            c1, c2 = st.columns(2)
-            recs_up = c1.file_uploader('Disturbance records (COMTRADE .cfg + .dat or .zip), any number of relays', type=['cfg', 'dat', 'zip'],
-                                       accept_multiple_files=True, key='fs_rec')
-            ev_up = c2.file_uploader('Event lists (PDF, picture, CSV, TXT, Excel), optional', type=['pdf', 'png', 'jpg', 'jpeg', 'csv', 'txt', 'xlsx', 'xls'],
-                                     accept_multiple_files=True, key='fs_ev')
-            if recs_up:
-                fg, model = fg_engine()
-                recs = read_record_files(recs_up, fg)
-                if not recs:
-                    st.warning('No complete record: upload each .cfg with its .dat.')
-                else:
-                    names = ' '.join(f"{rc.get('station', '')} {rc.get('device', '')} {n}" for n, rc in recs)
-                    g, _, _ = ng.line_for_relay(D, recs[0][1].get('station', '') or '', '', [f.name for f in recs_up] + [n for n, _ in recs])
-                    if g is None:
-                        g, _ = ng.match_line(names, D)
-                    ln = st.selectbox('Line of the fault', LINES, index=LINES.index(g) if g in LINES else 0, key='fs_rec_line')
-                    if st.button('🔎 Read the records', type='primary', key='fs_read'):
-                        with st.spinner('Reading the records with the FaultGuard engine...'):
-                            Lrow = ng.filled(D)[0]['Lines'].set_index('Line').loc[ln]
-                            kv = float(D['Buses'].set_index('Bus').at[Lrow['From Bus'], 'kV'])
-                            line_d = {'length_km': float(Lrow['Length km']), 'r1': float(Lrow['R1 ohm/km']), 'x1': float(Lrow['X1 ohm/km']),
-                                      'r0': float(Lrow['R0 ohm/km']), 'x0': float(Lrow['X0 ohm/km']), 'kv': kv}
-                            events = []
-                            for f in ev_up or []:
-                                try:
-                                    e = fg.parse_events(f.getvalue(), f.name)
-                                    if len(e):
-                                        events.append((f.name, e))
-                                except Exception:
-                                    pass
-                            try:
-                                a, rec = fg.analyze_incident(recs, events or None, None, line_d, None, model=model)
-                                ends = {}
-                                for n, rc in recs:
-                                    try:
-                                        ai = fg.analyze(rc, None, line_d, None, model=model)
-                                        side = end_of(rc.get('station', '') or n, Lrow.to_dict())
-                                        if side and ai.get('I_fault_max_kA'):
-                                            ends[side] = (ai['I_fault_max_kA'], ai.get('loc_km'), rc.get('station', '') or n)
-                                    except Exception:
-                                        continue
-                                main_side = end_of(rec.get('station', ''), Lrow.to_dict()) or 'from'
-                                if not ends and a.get('I_fault_max_kA'):     # recorder station not recognised: its current goes to the From end
-                                    ends[main_side] = (a['I_fault_max_kA'], a.get('loc_km'), rec.get('station', '') or 'record')
-                                loc = a.get('loc_km')
-                                d_from = (Lrow['Length km'] - loc) if (loc is not None and main_side == 'to') else loc
-                                ss['fs_pre'] = {'line': ln, 'd_km': d_from, 'type': str(a.get('type', '') or 'AG').upper(),
-                                                'I_from': ends.get('from', (None,))[0], 'I_to': ends.get('to', (None,))[0],
-                                                'note': f"Records: {', '.join(n for n, _ in recs)}. FaultGuard: {a.get('type')} fault, "
-                                                        f"{a.get('I_fault_max_kA', 0):.2f} kA, {('%.1f km from ' % loc + str(rec.get('station') or 'the recording end')) if loc is not None else 'not located'}."
-                                                        + ''.join(f" {s.title()} end ({v[2]}): {v[0]:.2f} kA." for s, v in ends.items())}
-                                calibrate_from_records(recs, ln, 'uploaded records')
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f'Could not analyse the records: {e}')
+            fault_from_files()
         pre = ss.get('fs_pre', {})
         if pre.get('note'):
             st.info(pre['note'])
