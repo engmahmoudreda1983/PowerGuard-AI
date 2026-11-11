@@ -23,7 +23,7 @@ MODULES = {
     'pdguard': ('pdguard-ai', 'PDGuard_AI.app.py', ['pdguard_core.py', 'pd_classifier.pkl']),
     'motorguard': ('motorguard_ai', 'MotorGuard_AI.app.py', ['motorguard_core.py', 'thermal_model.pkl']),
     'relayguard': ('relayguard_ai', 'RelayGuard_AI.app.py', ['relayguard_core.py', 'omicron_report.py', 'report_pdf.py', 'record_anomaly_model.pkl']),
-    'faultguard': ('faultguard_ai', 'FaultGuard_AI.app.py', ['faultguard_core.py', 'report_pdf.py', 'trip_html.py', 'faultguard_model.pkl']),
+    'faultguard': ('faultguard_ai', 'FaultGuard_AI.app.py', ['faultguard_core.py', 'micom_set.py', 'report_pdf.py', 'trip_html.py', 'faultguard_model.pkl']),
     'networkguard': ('networkguard_ai', 'NetworkGuard_AI.app.py', ['networkguard_core.py', 'networkguard_plots.py', 'networkguard_import.py',
                                                                    'iec60909_4_example.py', 'report_pdf.py']),   # FaultGuard engine comes from modules/faultguard
 }

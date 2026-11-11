@@ -120,3 +120,79 @@ def line_data(path_or_bytes):
     d.update(length_km=km, z1_ohm=d['z'] * k, r1=z1.real, x1=z1.imag, r0=z0.real, x0=z0.imag,
              defaults=(d['z'] == 10.0 and d['angle_deg'] == 70.0))
     return d
+
+
+def _grp(cs, active):
+    """Column range of the active setting group (group 1: 0x30-0x4F, group 2: 0x50-0x6F, ...); group 1 if the group is not in the file."""
+    g = (0x30 + 0x20 * (int(active) - 1), 0x4F + 0x20 * (int(active) - 1)) if str(active).isdigit() and 1 <= int(active) <= 4 else (0x30, 0x4F)
+    if not any(g[0] <= int(c['addr'][:2], 16) <= g[1] for c in cs):
+        g = (0x30, 0x4F)
+    return g
+
+
+def fault_settings(path_or_bytes):
+    """Line and distance-protection settings of the active group, in the form FaultGuard uses for settings read from text
+    (keys line_length km, line_z, line_angle, kzn, kzn_angle, z1/z2/z3 reach with unit, zone times in ms, resistive reaches,
+    characteristics, CT/VT, values_in, device, station, description, auto_reclose)."""
+    data = path_or_bytes if isinstance(path_or_bytes, (bytes, bytearray)) else open(path_or_bytes, 'rb').read()
+    cs = cells(data)
+    m = re.search(r'MODEL:\s*(\S+)', data[:400].decode('latin1'))
+    model = m.group(1) if m else (_find(cs, r'Model Number', col='00') or '')
+    active = _find(cs, r'Active Group', col='00') or 1
+    g = _grp(cs, active)
+    f = lambda pat: _find(cs, pat, cols=g)
+    out = {'device': str(model)[:4].upper(), 'model': model, 'active_group': active, '_read_as': 'MiCOM settings file (.set)'}
+    for k, pat in (('description', r'Description'), ('plant_reference', r'Plant Reference')):
+        v = _find(cs, pat, col='00')
+        if v:
+            out[k] = v
+    sv = _find(cs, r'Setting Values', col='09')
+    if sv:
+        out['values_in'] = sv
+    for k, pat in (('vt_primary', r'Main VT Primary'), ('vt_secondary', r"Main VT Sec'?y"),
+                   ('ct_primary', r'Phase ?CT1? Primary'), ('ct_secondary', r"Phase ?CT1? Sec'?y")):
+        v = _find(cs, pat, col='0A')
+        if v:
+            out[k] = v
+    L = f(r'Line Length')
+    if L:
+        out['line_length'] = L / 1000.0                       # the first Line Length cell is in metres
+    for k, pat in (('line_z', r'Line Impedance'), ('line_angle', r'Line Angle'), ('kzn', r'kZN Res Comp'), ('kzn_angle', r'kZN Res Angle')):
+        v = f(pat)
+        if v is not None:
+            out[k] = v
+    if out.get('line_z') == 10.0 and out.get('line_angle') == 70.0:
+        out['defaults'] = True                                 # factory values: no real line data in this file
+    ar = _find(cs, r'Auto-?Reclose', col='09')
+    if ar:
+        out['auto_reclose'] = 'In service' if str(ar).lower().startswith('enab') else 'Out of service'
+    if str(_find(cs, r'Distance', col='09') or 'Enabled').lower().startswith('dis'):
+        return out                                             # distance protection disabled: line data only
+    for k, pat in (('char_ph', r'Phase Chars?\.?'), ('char_gnd', r'Ground Chars?\.?')):
+        v = f(pat)
+        if isinstance(v, str):
+            out[k] = 'quad' if v.lower().startswith('quad') else 'mho'
+    simple = str(f(r'Setting Mode') or '').lower().startswith('simp')
+    for n in (1, 2, 3):
+        if str(f(rf'Zone ?{n} Ph\.? Stat(us)?\.?') or 'Enabled').lower().startswith('dis'):
+            continue
+        pct, ohm = f(rf'Zone ?{n} Ph\.? Reach'), f(rf'Z{n} Ph\.? Reach')
+        if simple and pct is not None or ohm is None:
+            if pct is not None:
+                out[f'z{n}_reach'], out[f'z{n}_reach_unit'] = pct, '%'
+        else:
+            out[f'z{n}_reach'], out[f'z{n}_reach_unit'] = ohm, 'ohm'
+        t = f(rf'tZ{n} Ph\.? Delay')
+        if t is not None:
+            out[f'z{n}_time'] = t * 1000.0
+        for kind, lab in (('ph', r'Ph\.?'), ('gnd', r'Gnd\.?')):
+            r = f(rf'R{n} {lab} Res(istive|\. ?Fwd\.?)')
+            if r is not None:
+                out[f'r{n}_{kind}'] = r
+    t4 = f(r'tZ4 Ph\.? Delay')
+    if t4 is not None:
+        out['z4_time'] = t4 * 1000.0
+    tilt = f(r'Z1 Tilt Top Line')
+    if tilt is not None:
+        out['tilt'] = tilt
+    return out
