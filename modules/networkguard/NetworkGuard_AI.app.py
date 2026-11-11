@@ -694,7 +694,7 @@ def calibrate_from_records(recs, line, label, redo=None):
     if not meas or not grids:
         return
     try:
-        new, T, f = ng.fit_grids(D, remember(meas), grids)
+        new, T, f = ng.fit_grids(D, [{**m, 'Z0': None} for m in remember(meas)], grids)   # positive sequence only (see the earthing note)
         ss['fs_cal'] = {'new': new, 'T': T, 'f': f, 'label': label, 'redo': redo}
     except Exception:
         pass
@@ -869,8 +869,10 @@ def grid_sk_from_records():
             c3.markdown(f"**{r['kV']:.0f} kV**, Zs = {abs(r['Z1']):.2f} Ω ∠{np.degrees(np.angle(r['Z1'])):.0f}° → **Sk ≈ {r['Sk MVA']:,.0f} MVA**, X/R {r['X/R']}"
                         + (f", Zs0 = {abs(r['Z0']):.1f} Ω" if r['Z0'] is not None else '') + f"  \n<small>{r['method']}; {'; '.join(r['notes'])}</small>",
                         unsafe_allow_html=True)
+            outs_ = st.multiselect('Other circuits out of service on that day (older records: circuits not built yet)', [x for x in LINES if x != lsel],
+                                   key=f'sk_out_{i}', help='The network as it was at the time of the fault, e.g. circuits built after that date.')
             if lsel:
-                meas.append({'name': n, 'bus': bsel, 'line': lsel, 'Z1': r['Z1'], 'Z0': r['Z0']})
+                meas.append({'name': n, 'bus': bsel, 'line': lsel, 'Z1': r['Z1'], 'Z0': r['Z0'], 'outages': outs_})
         if not meas or not len(D['Grids']):
             if not len(D['Grids']):
                 st.info('Add the grids to the network first.')
@@ -879,8 +881,10 @@ def grid_sk_from_records():
         gsel = st.multiselect('Grids to adjust', gl_, default=gl_, key='sk_grids',
                               help='One record fixes one value: all the chosen grids are scaled by the same factor. Records from other stations '
                                    'let you adjust the grids near them separately.')
-        z0 = st.checkbox('Also adjust the zero sequence (X0/X1)', value=True, key='sk_z0',
-                         help='The zero-sequence value at a double-circuit line includes the mutual coupling of the parallel circuit.')
+        z0 = st.checkbox('Also adjust the zero sequence (X0/X1) of the grids', value=False, key='sk_z0',
+                         help='Use only when the earthing of the network (earthed transformer star points in every substation) is already in the model: '
+                              'a missing earthing point shows as a much lower measured Z0 and is not a grid value. The zero-sequence value at a '
+                              'double-circuit line also includes the mutual coupling of the parallel circuit.')
         old_n = len([k for k in sk_memory() if k not in {(m['name'], m['bus'], m['line']) for m in meas}])
         if old_n:
             c1, c2 = st.columns([3, 1])

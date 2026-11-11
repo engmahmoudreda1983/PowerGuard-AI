@@ -733,7 +733,7 @@ def _scaled(data, grids, k1, k0=1.0):
 
 def fit_grids(data, meas, grids=None, each=None):
     """Adjust the short-circuit power and the X0/X1 of the chosen grids so that the model's source impedances match the
-    measured ones (meas: list of {'bus', 'line', 'Z1', 'Z0'}). One measuring point fixes one value, so all the grids get one
+    measured ones (meas: list of {'bus', 'line', 'Z1', 'Z0', optional 'outages': circuits out of service that day}). One measuring point fixes one value, so all the grids get one
     common factor; records from several buses or faulted circuits give each grid its own factor (least squares on the
     logarithms, held towards the common factor where the records cannot tell the grids apart).
     Returns the new data, the comparison table per record and {'grids', 'mode', 'table' per grid}."""
@@ -746,12 +746,15 @@ def fit_grids(data, meas, grids=None, each=None):
     G.loc[G['Sk min MVA'].isna(), 'Sk min MVA'] = 0.6 * pd.to_numeric(G['Sk max MVA'])
     G.loc[G['X0/X1'].isna(), 'X0/X1'] = 1.0
     meas = [m for m in meas if m.get('bus')]
-    setups = sorted({(m['bus'], m.get('line') or '') for m in meas})
+    def key_of(m):                     # the measuring point and the network of that day (faulted circuit + other circuits out then)
+        return (m['bus'], m.get('line') or '', tuple(sorted(set(m.get('outages') or ()) - {m.get('line')})))
+
+    setups = sorted({key_of(m) for m in meas})
     each = (len(setups) > 1 and len(grids) > 1) if each is None else each
     nets = {}
-    for b, ln in setups:
-        net = build(data, 'sc', outages=(ln,) if ln else ())
-        nets[(b, ln)] = (net, net.bus.index[net.bus.name == b][0], net.ext_grid.copy())
+    for b, ln, out in setups:
+        net = build(data, 'sc', outages=((ln,) if ln else ()) + out)
+        nets[(b, ln, out)] = (net, net.bus.index[net.bus.name == b][0], net.ext_grid.copy())
 
     def zs(key, k1, k0):
         net, bi, base = nets[key]
@@ -773,7 +776,7 @@ def fit_grids(data, meas, grids=None, each=None):
 
     def res1(x):
         k = factors(x)
-        r = [math.log(abs(zs((m['bus'], m.get('line') or ''), k, {})[0])) - math.log(abs(m['Z1'])) for m in meas]
+        r = [math.log(abs(zs(key_of(m), k, {})[0])) - math.log(abs(m['Z1'])) for m in meas]
         return np.array(r + ([lam * (v - x.mean()) for v in x] if each else []))
 
     x1 = least_squares(res1, np.zeros(n), bounds=(-4, 4), diff_step=1e-3).x
@@ -783,7 +786,7 @@ def fit_grids(data, meas, grids=None, each=None):
     if m0:
         def res0(x):
             k = factors(x)
-            r = [math.log(abs(zs((m['bus'], m.get('line') or ''), k1, k)[1])) - math.log(abs(m['Z0'])) for m in m0]
+            r = [math.log(abs(zs(key_of(m), k1, k)[1])) - math.log(abs(m['Z0'])) for m in m0]
             return np.array(r + ([lam * (v - x.mean()) for v in x] if each else []))
         k0 = factors(least_squares(res0, np.zeros(n), bounds=(-3, 3), diff_step=1e-3).x)
     new = _copy(data)
@@ -794,11 +797,12 @@ def fit_grids(data, meas, grids=None, each=None):
         new['Grids'].loc[mk, 'X0/X1'] = pd.to_numeric(new['Grids'].loc[mk, 'X0/X1']) * k0.get(g, 1.0)
     rows = []
     for m in meas:
-        key = (m['bus'], m.get('line') or '')
+        key = key_of(m)
         z1o, z0o = zs(key, {}, {})
         z1n, z0n = zs(key, k1, k0)
         kv = float(data['Buses'].set_index('Bus')['kV'].get(m['bus'], 0) or 0)
         rows.append({'Record': m.get('name', ''), 'Bus': m['bus'], 'Faulted circuit': m.get('line') or '',
+                     'Also out that day': ', '.join(key[2]),
                      'Measured Sk (MVA)': round(kv ** 2 / abs(m['Z1'])), 'Model Sk before (MVA)': round(kv ** 2 / abs(z1o)),
                      'Model Sk after (MVA)': round(kv ** 2 / abs(z1n)),
                      'Measured Z0 (ohm)': round(abs(m['Z0']), 1) if m.get('Z0') is not None else np.nan,
